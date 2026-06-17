@@ -121,7 +121,7 @@ export const useInference = () => {
    *               Ignored by closed-vocabulary detectors (RT-DETR, DETR).
    */
   const runInference = useCallback(
-    (imageSrc: string, imageIndex: number, prompt?: string) => {
+    (imageSrc: string, imageIndex: number, prompt?: string | null) => {
       if (!workerRef.current || !isModelLoadedRef.current) return;
       const msg: WorkerInMessage = {
         type: "run-inference",

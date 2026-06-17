@@ -121,7 +121,8 @@ const NachetMiniContainer = () => {
   const selectedDetector = DETECTOR_MODELS.find(
     (d) => d.id === selectedDetectorId,
   );
-  const detectorRequiresPrompt = !!selectedDetector?.requiresPrompt;
+  const detectorRequiresPrompt =
+    selectedDetector?.kind === "text-promptable-segmentation";
   const [switchTable, setSwitchTable] = useState(false);
   const [metadataOpen, setMetadataOpen] = useState(false);
   const [metadataMode, setMetadataMode] = useState<"defaults" | "image">(
@@ -196,11 +197,11 @@ const NachetMiniContainer = () => {
     if (!currentImage) return;
 
     if (modelLoaded) {
-      if (detectorRequiresPrompt) {
-        runInference(currentImage.src, currentImage.index, detectorPrompt);
-      } else {
-        runInference(currentImage.src, currentImage.index);
-      }
+      runInference(
+        currentImage.src,
+        currentImage.index,
+        detectorRequiresPrompt ? detectorPrompt : null,
+      );
       return;
     }
 
@@ -231,11 +232,11 @@ const NachetMiniContainer = () => {
 
     const stillExists = images.some((img) => img.index === pending.imageIndex);
     if (stillExists) {
-      if (detectorRequiresPrompt) {
-        runInference(pending.imageSrc, pending.imageIndex, detectorPrompt);
-      } else {
-        runInference(pending.imageSrc, pending.imageIndex);
-      }
+      runInference(
+        pending.imageSrc,
+        pending.imageIndex,
+        detectorRequiresPrompt ? detectorPrompt : null,
+      );
     }
     setPendingInferenceRequest(null);
   }, [modelLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
