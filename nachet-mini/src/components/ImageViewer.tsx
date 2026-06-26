@@ -5,6 +5,7 @@ import { getUnscaledCoordinates, getScaledBounds } from "@common/imageutils";
 import InferenceOverlay from "@components/InferenceOverlay";
 import { useIsPortrait } from "@hooks/useIsPortrait";
 import { useBoxEditStore, generateUserBoxId } from "@stores/useBoxEditStore";
+import { useInferenceStore } from "@stores/useInferenceStore";
 
 interface Props {
   src: string | undefined;
@@ -18,6 +19,12 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const isPortrait = useIsPortrait();
+
+  // DFF concept heatmaps (keyed "imageIndex:modelConfigId:boxId"); the active
+  // result key gives the "imageIndex:modelConfigId" prefix for the shown result.
+  const dffResults = useInferenceStore((s) => s.dffResults);
+  const dffVisible = useInferenceStore((s) => s.dffVisible);
+  const activeResultKey = useInferenceStore((s) => s.activeResultKey);
 
   // Box edit store
   const isEditing = useBoxEditStore((s) => s.isEditing);
@@ -244,6 +251,13 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
                 minBoxSize={result?.minBoxSize ?? 0}
                 editMode={isEditing}
                 isEditSelected={isEditing && selectedBoxIndex === i}
+                dff={
+                  !isEditing &&
+                  activeResultKey &&
+                  dffVisible.has(`${activeResultKey}:${box.boxId}`)
+                    ? dffResults.get(`${activeResultKey}:${box.boxId}`)
+                    : undefined
+                }
                 onBoxUpdate={isEditing ? updateBox : undefined}
                 onBoxDelete={isEditing ? deleteBox : undefined}
                 onBoxSelect={isEditing ? setSelectedBoxIndex : undefined}

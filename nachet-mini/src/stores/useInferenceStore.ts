@@ -18,9 +18,28 @@ export interface ModelLoadProgress {
 export const resultKey = (imageIndex: number, modelConfigId: string): string =>
   `${imageIndex}:${modelConfigId}`;
 
+/** Per-box DFF key: "imageIndex:modelConfigId:boxId" */
+export const dffKey = (
+  imageIndex: number,
+  modelConfigId: string,
+  boxId: string,
+): string => `${resultKey(imageIndex, modelConfigId)}:${boxId}`;
+
+/** Deep Feature Factorization concept heatmaps for one classified box. */
+export interface DffBoxResult {
+  /** spatial grid side (e.g. 12 → 12×12). */
+  grid: number;
+  /** K concept heatmaps, each `grid*grid` floats in [0, 1]. */
+  heatmaps: number[][];
+}
+
 interface InferenceState {
   /** Results keyed by "imageIndex:modelConfigId" */
   results: Map<string, InferenceResult>;
+  /** DFF concept heatmaps keyed by "imageIndex:modelConfigId:boxId" */
+  dffResults: Map<string, DffBoxResult>;
+  /** dffKeys whose concept map is currently shown on the image (default: off) */
+  dffVisible: Set<string>;
   /** Which result the user is currently viewing */
   activeResultKey: string | null;
   status: InferenceStatus;
@@ -40,6 +59,19 @@ interface InferenceState {
   getResultsForImage: (
     imageIndex: number,
   ) => Array<{ modelConfigId: string; result: InferenceResult }>;
+  setDffResult: (
+    imageIndex: number,
+    modelConfigId: string,
+    boxId: string,
+    dff: DffBoxResult,
+  ) => void;
+  getDffResult: (
+    imageIndex: number,
+    modelConfigId: string,
+    boxId: string,
+  ) => DffBoxResult | undefined;
+  /** Toggle the concept-map overlay for one box (full dffKey). */
+  toggleDffVisible: (key: string) => void;
   setActiveResultKey: (key: string | null) => void;
   removeResultsForImage: (imageIndex: number) => void;
   removeResult: (key: string) => void;
@@ -52,6 +84,8 @@ interface InferenceState {
 
 export const useInferenceStore = create<InferenceState>()((set, get) => ({
   results: new Map(),
+  dffResults: new Map(),
+  dffVisible: new Set(),
   activeResultKey: null,
   status: "idle",
   modelLoaded: false,
@@ -87,6 +121,33 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     return entries;
   },
 
+  setDffResult: (
+    imageIndex: number,
+    modelConfigId: string,
+    boxId: string,
+    dff: DffBoxResult,
+  ) => {
+    const key = dffKey(imageIndex, modelConfigId, boxId);
+    set((state) => {
+      const newMap = new Map(state.dffResults);
+      newMap.set(key, dff);
+      return { dffResults: newMap };
+    });
+  },
+
+  getDffResult: (imageIndex: number, modelConfigId: string, boxId: string) => {
+    return get().dffResults.get(dffKey(imageIndex, modelConfigId, boxId));
+  },
+
+  toggleDffVisible: (key: string) => {
+    set((state) => {
+      const next = new Set(state.dffVisible);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return { dffVisible: next };
+    });
+  },
+
   setActiveResultKey: (key: string | null) => {
     set({ activeResultKey: key });
   },
@@ -100,11 +161,28 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           newMap.delete(key);
         }
       }
+      const newDff = new Map(state.dffResults);
+      for (const key of newDff.keys()) {
+        if (key.startsWith(prefix)) {
+          newDff.delete(key);
+        }
+      }
+      const newVisible = new Set(state.dffVisible);
+      for (const key of newVisible) {
+        if (key.startsWith(prefix)) {
+          newVisible.delete(key);
+        }
+      }
       const activeKey =
         state.activeResultKey?.startsWith(prefix) === true
           ? null
           : state.activeResultKey;
-      return { results: newMap, activeResultKey: activeKey };
+      return {
+        results: newMap,
+        dffResults: newDff,
+        dffVisible: newVisible,
+        activeResultKey: activeKey,
+      };
     });
   },
 
@@ -137,6 +215,8 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
   clearResults: () => {
     set({
       results: new Map(),
+      dffResults: new Map(),
+      dffVisible: new Set(),
       activeResultKey: null,
       status: "idle",
       modelLoadProgress: null,
