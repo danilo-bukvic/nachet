@@ -30,6 +30,7 @@ interface RenderOptions {
   onSelectDetector?: (id: string) => void;
   onSelectClassifier?: (id: string) => void;
   isLoading?: boolean;
+  disabled?: boolean;
   detectorPrompt?: string;
   onDetectorPromptChange?: (v: string) => void;
   detectorRequiresPrompt?: boolean;
@@ -43,6 +44,7 @@ const renderModelLoaderElement = ({
   onSelectDetector = vi.fn(),
   onSelectClassifier = vi.fn(),
   isLoading = false,
+  disabled = false,
   detectorPrompt = "",
   onDetectorPromptChange = vi.fn(),
   detectorRequiresPrompt = false,
@@ -56,6 +58,7 @@ const renderModelLoaderElement = ({
       onSelectDetector={onSelectDetector}
       onSelectClassifier={onSelectClassifier}
       isLoading={isLoading}
+      disabled={disabled}
       detectorPrompt={detectorPrompt}
       onDetectorPromptChange={onDetectorPromptChange}
       detectorRequiresPrompt={detectorRequiresPrompt}
@@ -87,16 +90,12 @@ describe("ModelLoader", () => {
   afterEach(cleanup);
 
   describe("loading state", () => {
-    it("renders a loading status with two skeletons and no controls", async () => {
+    it("renders disabled selects when loading", async () => {
       renderModelLoader({ isLoading: true });
-      await expect
-        .element(page.getByRole("status", { name: enMain.modelLoader.loading }))
-        .toBeVisible();
-      expect(
-        await page.getByTestId("model-loader-skeleton").all(),
-      ).toHaveLength(2);
-      expect(await page.getByRole("combobox").all()).toHaveLength(0);
-      expect(await page.getByRole("link").all()).toHaveLength(0);
+      const selects = await page.getByRole("combobox").all();
+      for (const select of selects) {
+        await expect.element(select).toBeDisabled();
+      }
     });
   });
 

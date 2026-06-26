@@ -72,7 +72,7 @@ jobs:
           echo "${{ steps.meta-backend.outputs.tags }}" | while read -r tag; do
             echo "Verifying backend image: $tag"
             cosign verify \
-              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
+              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/prod-build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
               --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
               "$tag"
           done
@@ -87,6 +87,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
+        with:
+          submodules: recursive
 
       - name: Login to Container Registry
         uses: docker/login-action@bb555fc48dca4deb5f227b07c7304c673b5708f0
@@ -139,7 +141,7 @@ jobs:
           echo "${{ steps.meta-frontend.outputs.tags }}" | while read -r tag; do
             echo "Verifying frontend image: $tag"
             cosign verify \
-              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
+              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/prod-build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
               --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
               "$tag"
           done
@@ -173,13 +175,13 @@ jobs:
 
             # Verify frontend signature
             cosign verify \
-              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
+              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/prod-build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
               --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
               ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/nachet-frontend:${{ github.ref_name }}
 
             # Verify backend signature
             cosign verify \
-              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
+              --certificate-identity=https://github.com/${{ github.repository }}/.github/workflows/prod-build-sign-deploy.yml@refs/tags/${{ github.ref_name }} \
               --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
               ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/nachet-backend:${{ github.ref_name }}
             ```

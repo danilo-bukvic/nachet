@@ -5,7 +5,6 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Skeleton,
   TextField,
 } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
@@ -33,6 +32,7 @@ interface Props {
   detectorPrompt: string;
   onDetectorPromptChange: (value: string) => void;
   detectorRequiresPrompt: boolean;
+  disabled: boolean;
 }
 
 const ModelLoader = ({
@@ -46,6 +46,7 @@ const ModelLoader = ({
   detectorPrompt,
   onDetectorPromptChange,
   detectorRequiresPrompt,
+  disabled,
 }: Props) => {
   const { t } = useTranslation("main");
   const detectorLabel = t("modelLoader.detector");
@@ -61,30 +62,13 @@ const ModelLoader = ({
     maxWidth: { xs: "fit-content", md: "8vw" },
   };
 
-  if (isLoading) {
-    return (
-      <Box
-        role="status"
-        aria-label={t("modelLoader.loading")}
-        sx={{ display: "flex", alignItems: "center", gap: "0.4vh" }}
-      >
-        <Skeleton
-          data-testid="model-loader-skeleton"
-          variant="rounded"
-          sx={{ ...dropdownSx, height: "4vh", minWidth: "8vw" }}
-        />
-        <Skeleton
-          data-testid="model-loader-skeleton"
-          variant="rounded"
-          sx={{ ...dropdownSx, height: "4vh", minWidth: "8vw" }}
-        />
-      </Box>
-    );
-  }
-
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: "0.4vh" }}>
-      <FormControl size="small" sx={dropdownSx}>
+      <FormControl
+        size="small"
+        sx={dropdownSx}
+        disabled={isLoading || disabled}
+      >
         <InputLabel id="detector-model-label" sx={{ fontSize: "1.2vh" }}>
           {detectorLabel}
         </InputLabel>
@@ -119,7 +103,11 @@ const ModelLoader = ({
         </IconButton>
       )}
 
-      <FormControl size="small" sx={dropdownSx}>
+      <FormControl
+        size="small"
+        sx={dropdownSx}
+        disabled={isLoading || disabled}
+      >
         <InputLabel id="classifier-model-label" sx={{ fontSize: "1.2vh" }}>
           {classifierLabel}
         </InputLabel>
