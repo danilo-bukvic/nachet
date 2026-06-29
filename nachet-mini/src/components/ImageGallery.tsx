@@ -22,8 +22,8 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import type { Images, InferenceResult } from "@common/types";
 import { resultKey } from "@stores/useInferenceStore";
-import SeedConceptCutouts from "@components/SeedConceptCutouts";
 import { useInferenceQueueStore } from "@stores/useInferenceQueueStore";
+import ConceptLayerToggles from "@components/ConceptLayerToggles";
 import { useTranslation } from "react-i18next";
 import { useState, useCallback, useMemo } from "react";
 interface Props {
@@ -516,8 +516,7 @@ const ImageGallery = ({
                                 })}
                               </Box>
                             </Box>
-                            <SeedConceptCutouts
-                              imageSrc={item.src}
+                            <ConceptLayerToggles
                               resultKey={key}
                               result={result}
                             />

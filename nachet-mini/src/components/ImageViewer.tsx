@@ -22,9 +22,13 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
 
   // DFF concept heatmaps (keyed "imageIndex:modelConfigId:boxId"); the active
   // result key gives the "imageIndex:modelConfigId" prefix for the shown result.
+  // `dffConcepts` holds which concept indices are toggled on for that run.
   const dffResults = useInferenceStore((s) => s.dffResults);
-  const dffVisible = useInferenceStore((s) => s.dffVisible);
+  const dffConcepts = useInferenceStore((s) => s.dffConcepts);
   const activeResultKey = useInferenceStore((s) => s.activeResultKey);
+  const activeConcepts = activeResultKey
+    ? Array.from(dffConcepts.get(activeResultKey) ?? [])
+    : [];
 
   // Box edit store
   const isEditing = useBoxEditStore((s) => s.isEditing);
@@ -252,12 +256,11 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
                 editMode={isEditing}
                 isEditSelected={isEditing && selectedBoxIndex === i}
                 dff={
-                  !isEditing &&
-                  activeResultKey &&
-                  dffVisible.has(`${activeResultKey}:${box.boxId}`)
+                  !isEditing && activeResultKey
                     ? dffResults.get(`${activeResultKey}:${box.boxId}`)
                     : undefined
                 }
+                activeConcepts={isEditing ? undefined : activeConcepts}
                 onBoxUpdate={isEditing ? updateBox : undefined}
                 onBoxDelete={isEditing ? deleteBox : undefined}
                 onBoxSelect={isEditing ? setSelectedBoxIndex : undefined}

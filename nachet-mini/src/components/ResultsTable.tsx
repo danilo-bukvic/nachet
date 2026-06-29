@@ -9,16 +9,13 @@ import {
   CardHeader,
   CircularProgress,
   IconButton,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import SwitchLeftIcon from "@mui/icons-material/SwitchLeft";
 import CropFreeIcon from "@mui/icons-material/CropFree";
 import LabelIcon from "@mui/icons-material/Label";
-import BlurOnRounded from "@mui/icons-material/BlurOnRounded";
 import type { InferenceResult } from "@common/types";
 import { useTranslation } from "react-i18next";
-import { useInferenceStore } from "@stores/useInferenceStore";
 
 interface Props {
   result: InferenceResult | null;
@@ -30,13 +27,6 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
   const { t } = useTranslation("main");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
-
-  // DFF concept-map visibility (per seed/box), toggled from each result row.
-  const dffResults = useInferenceStore((s) => s.dffResults);
-  const dffVisible = useInferenceStore((s) => s.dffVisible);
-  const activeResultKey = useInferenceStore((s) => s.activeResultKey);
-  const toggleDffVisible = useInferenceStore((s) => s.toggleDffVisible);
-  const boxes = result?.boxes ?? [];
 
   const handleSelect = (key: string): void => {
     setSelectedLabel(selectedLabel === key ? "all" : key);
@@ -252,11 +242,6 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
             {!switchTable &&
               classifications.map((prediction, classIdx) => {
                 const rowId = `box-${classIdx}`;
-                const dffBoxKey = activeResultKey
-                  ? `${activeResultKey}:${boxes[classIdx]?.boxId}`
-                  : "";
-                const hasDff = dffBoxKey !== "" && dffResults.has(dffBoxKey);
-                const dffOn = hasDff && dffVisible.has(dffBoxKey);
                 const boxTopN = topN[classIdx] ?? [];
                 const hasTopResults = boxTopN.length > 0;
                 const score = boxTopN[0]?.score ?? scores[classIdx] ?? 0;
@@ -312,27 +297,6 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
                           <span style={{ width: "0.7vw", textAlign: "left" }}>
                             {classIdx + 1}
                           </span>
-                          {hasDff && (
-                            <Tooltip title="Toggle concept map" placement="top">
-                              <IconButton
-                                size="small"
-                                sx={{ padding: 0, marginLeft: "0.4vw" }}
-                                aria-label="toggle concept map"
-                                aria-pressed={dffOn}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleDffVisible(dffBoxKey);
-                                }}
-                              >
-                                <BlurOnRounded
-                                  style={{
-                                    color: dffOn ? "#1565c0" : "#bdbdbd",
-                                    fontSize: "1.7vh",
-                                  }}
-                                />
-                              </IconButton>
-                            </Tooltip>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell

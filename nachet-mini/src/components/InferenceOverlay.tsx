@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { InferenceBox } from "@common/types";
 import type { DffBoxResult } from "@stores/useInferenceStore";
+import { conceptColorRgb } from "@common/dffColors";
 import { getScaledBounds, getUnscaledCoordinates } from "@common/imageutils";
 import { useIsPortrait } from "@hooks/useIsPortrait";
 import {
@@ -41,31 +42,6 @@ const handleCursors: Record<string, string> = {
   w: "ew-resize",
 };
 
-// Distinct hues (deg) per DFF concept for the combined concept map.
-const DFF_CONCEPT_HUES = [0, 205, 130, 45, 280, 170];
-
-const hueToRgb = (hueDeg: number): [number, number, number] => {
-  // saturated, mid-light color: HSL(h, 90%, 50%) -> RGB
-  const h = ((hueDeg % 360) + 360) % 360;
-  const c = 0.9; // chroma proxy for s=0.9,l=0.5
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  let r = 0,
-    g = 0,
-    b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const m = 0.5 - c / 2;
-  return [
-    Math.round((r + m) * 255),
-    Math.round((g + m) * 255),
-    Math.round((b + m) * 255),
-  ];
-};
-
 interface Props {
   index: number;
   imageWidth: number;
@@ -82,6 +58,8 @@ interface Props {
   isEditSelected?: boolean;
   /** DFF concept heatmaps for this box (when the patched classifier is active). */
   dff?: DffBoxResult;
+  /** Which concept indices to overlay on this box (empty/undefined = none). */
+  activeConcepts?: number[];
   onBoxUpdate?: (index: number, box: InferenceBox) => void;
   onBoxDelete?: (index: number) => void;
   onBoxSelect?: (index: number) => void;
@@ -107,6 +85,7 @@ const InferenceOverlay = ({
   editMode = false,
   isEditSelected = false,
   dff,
+  activeConcepts,
   onBoxUpdate,
   onBoxDelete,
   onBoxSelect,
@@ -123,8 +102,8 @@ const InferenceOverlay = ({
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle>(null);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, box: box });
 
-  // DFF concept-map overlay (visibility is controlled by the results-panel
-  // toggle; ImageViewer only passes `dff` when this box is toggled on).
+  // DFF concept overlay canvas; ImageViewer passes the box's heatmaps plus the
+  // set of active concept indices (toggled per concept in the Images panel).
   const dffCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const baseZ = index;
@@ -156,49 +135,45 @@ const InferenceOverlay = ({
     [canvasWidth, canvasHeight, imageWidth, imageHeight],
   );
 
-  // Render the combined DFF concept map: each grid cell is colored by its
-  // dominant concept (hue) with alpha = that concept's activation. Drawn at
-  // grid resolution then smoothly upscaled to the box size.
+  // Render the DFF overlay: draw each active concept's heatmap as its own
+  // colored layer (alpha = activation), drawn at grid resolution and smoothly
+  // upscaled. Layers are composited additively so that where several concepts
+  // are active at once their colors blend.
   useEffect(() => {
     const canvas = dffCanvasRef.current;
-    if (!canvas || !dff || editMode) return;
-    const g = dff.grid;
-    const k = dff.heatmaps.length;
-    if (!k || g * g !== dff.heatmaps[0].length) return;
-
-    const small = document.createElement("canvas");
-    small.width = g;
-    small.height = g;
-    const sctx = small.getContext("2d");
-    if (!sctx) return;
-    const img = sctx.createImageData(g, g);
-    for (let p = 0; p < g * g; p++) {
-      let best = 0;
-      let bestVal = -1;
-      for (let c = 0; c < k; c++) {
-        const v = dff.heatmaps[c][p];
-        if (v > bestVal) {
-          bestVal = v;
-          best = c;
-        }
-      }
-      const [r, gg, b] = hueToRgb(
-        DFF_CONCEPT_HUES[best % DFF_CONCEPT_HUES.length],
-      );
-      const o = p * 4;
-      img.data[o] = r;
-      img.data[o + 1] = gg;
-      img.data[o + 2] = b;
-      img.data[o + 3] = Math.round(Math.max(0, Math.min(1, bestVal)) * 165);
-    }
-    sctx.putImageData(img, 0, 0);
-
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!dff || editMode || !activeConcepts || activeConcepts.length === 0) {
+      return;
+    }
+    const g = dff.grid;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
-  }, [dff, editMode, scaledWidth, scaledHeight]);
+    ctx.globalCompositeOperation = "lighter"; // additive blend across concepts
+    for (const c of activeConcepts) {
+      const heat = dff.heatmaps[c];
+      if (!heat || g * g !== heat.length) continue;
+      const [r, gg, b] = conceptColorRgb(c);
+      const small = document.createElement("canvas");
+      small.width = g;
+      small.height = g;
+      const sctx = small.getContext("2d");
+      if (!sctx) continue;
+      const img = sctx.createImageData(g, g);
+      for (let p = 0; p < g * g; p++) {
+        const v = Math.max(0, Math.min(1, heat[p]));
+        const o = p * 4;
+        img.data[o] = r;
+        img.data[o + 1] = gg;
+        img.data[o + 2] = b;
+        img.data[o + 3] = Math.round(v * 150);
+      }
+      sctx.putImageData(img, 0, 0);
+      ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }, [dff, activeConcepts, editMode, scaledWidth, scaledHeight]);
 
   // Window-level mouse handlers for drag/resize
   useEffect(() => {
@@ -486,8 +461,8 @@ const InferenceOverlay = ({
       sx={sx}
       onMouseDown={editMode ? handleBoxMouseDown : undefined}
     >
-      {/* DFF concept-map overlay (shown when toggled on in the results panel) */}
-      {dff && !editMode && (
+      {/* DFF concept overlay (one colored layer per active concept) */}
+      {dff && !editMode && activeConcepts && activeConcepts.length > 0 && (
         <canvas
           ref={dffCanvasRef}
           data-testid={`dff-overlay-${index}`}

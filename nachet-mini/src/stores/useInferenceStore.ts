@@ -38,8 +38,12 @@ interface InferenceState {
   results: Map<string, InferenceResult>;
   /** DFF concept heatmaps keyed by "imageIndex:modelConfigId:boxId" */
   dffResults: Map<string, DffBoxResult>;
-  /** dffKeys whose concept map is currently shown on the image (default: off) */
-  dffVisible: Set<string>;
+  /**
+   * Which DFF concepts are currently overlaid, per run. Keyed by the result key
+   * "imageIndex:modelConfigId" → set of active concept indices. A concept, once
+   * toggled on, is overlaid on every seed of that run (multiple may be active).
+   */
+  dffConcepts: Map<string, Set<number>>;
   /** Which result the user is currently viewing */
   activeResultKey: string | null;
   status: InferenceStatus;
@@ -70,8 +74,8 @@ interface InferenceState {
     modelConfigId: string,
     boxId: string,
   ) => DffBoxResult | undefined;
-  /** Toggle the concept-map overlay for one box (full dffKey). */
-  toggleDffVisible: (key: string) => void;
+  /** Toggle one DFF concept's overlay for a run (resultKey + concept index). */
+  toggleDffConcept: (resultKey: string, concept: number) => void;
   setActiveResultKey: (key: string | null) => void;
   removeResultsForImage: (imageIndex: number) => void;
   removeResult: (key: string) => void;
@@ -85,7 +89,7 @@ interface InferenceState {
 export const useInferenceStore = create<InferenceState>()((set, get) => ({
   results: new Map(),
   dffResults: new Map(),
-  dffVisible: new Set(),
+  dffConcepts: new Map(),
   activeResultKey: null,
   status: "idle",
   modelLoaded: false,
@@ -139,12 +143,15 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     return get().dffResults.get(dffKey(imageIndex, modelConfigId, boxId));
   },
 
-  toggleDffVisible: (key: string) => {
+  toggleDffConcept: (key: string, concept: number) => {
     set((state) => {
-      const next = new Set(state.dffVisible);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return { dffVisible: next };
+      const next = new Map(state.dffConcepts);
+      const active = new Set(next.get(key) ?? []);
+      if (active.has(concept)) active.delete(concept);
+      else active.add(concept);
+      if (active.size === 0) next.delete(key);
+      else next.set(key, active);
+      return { dffConcepts: next };
     });
   },
 
@@ -167,10 +174,10 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           newDff.delete(key);
         }
       }
-      const newVisible = new Set(state.dffVisible);
-      for (const key of newVisible) {
+      const newConcepts = new Map(state.dffConcepts);
+      for (const key of newConcepts.keys()) {
         if (key.startsWith(prefix)) {
-          newVisible.delete(key);
+          newConcepts.delete(key);
         }
       }
       const activeKey =
@@ -180,7 +187,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
       return {
         results: newMap,
         dffResults: newDff,
-        dffVisible: newVisible,
+        dffConcepts: newConcepts,
         activeResultKey: activeKey,
       };
     });
@@ -216,7 +223,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     set({
       results: new Map(),
       dffResults: new Map(),
-      dffVisible: new Set(),
+      dffConcepts: new Map(),
       activeResultKey: null,
       status: "idle",
       modelLoadProgress: null,
