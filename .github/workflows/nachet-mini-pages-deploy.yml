@@ -7,9 +7,11 @@ permissions:
   id-token: write
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
+      - demo/dff-pages-deploy
     paths:
       - "nachet-mini/**"
       - ".github/workflows/nachet-mini-pages-deploy.yml"
