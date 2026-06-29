@@ -200,10 +200,19 @@ export const CLASSIFIER_MODELS: ClassifierModelEntry[] = [
   },
   {
     id: "swin-L 101spp",
-    // DFF-enabled mirror: identical to the 101spp repo but its onnx/model.onnx
-    // is the patched FP16 export that also outputs `swin_layernorm`, so Deep
-    // Feature Factorization works in production (not just dev). Demo-only — the
-    // canonical PR should host this on the official repo, not a -dff mirror.
+    model: "cfia-ai-lab/swin-large-patch4-window12-384-in22k-101spp-ft",
+    topK: 5,
+    minBoxSize: 384,
+  },
+  {
+    id: "swin-L 101spp DFF",
+    // DFF-enabled mirror of the 101spp repo: identical model, but its
+    // onnx/model.onnx is the patched FP16 export that also outputs
+    // `swin_layernorm`. Selecting this entry surfaces the Deep Feature
+    // Factorization UI (concept-map toggle + per-seed cutouts); the plain
+    // "swin-L 101spp" entry above has no swin_layernorm output, so that UI
+    // simply doesn't appear for it. Demo-only — the canonical PR should host
+    // the patched export on the official repo rather than a -dff mirror.
     model: "cfia-ai-lab/swin-large-patch4-window12-384-in22k-101spp-ft-dff",
     topK: 5,
     minBoxSize: 384,
