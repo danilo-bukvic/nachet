@@ -135,10 +135,11 @@ const InferenceOverlay = ({
     [canvasWidth, canvasHeight, imageWidth, imageHeight],
   );
 
-  // Render the DFF overlay: draw each active concept's heatmap as its own
-  // colored layer (alpha = activation), drawn at grid resolution and smoothly
-  // upscaled. Layers are composited additively so that where several concepts
-  // are active at once their colors blend.
+  // Render the DFF overlay: color each grid cell by whichever of the toggled-on
+  // concepts is strongest there (alpha = that concept's activation), drawn at
+  // grid resolution and smoothly upscaled. One active concept -> that concept's
+  // smooth heatmap; several -> a clean "dominant per cell" combined map with no
+  // blending/wash between concepts.
   useEffect(() => {
     const canvas = dffCanvasRef.current;
     if (!canvas) return;
@@ -149,30 +150,34 @@ const InferenceOverlay = ({
       return;
     }
     const g = dff.grid;
-    ctx.imageSmoothingEnabled = true;
-    ctx.globalCompositeOperation = "lighter"; // additive blend across concepts
-    for (const c of activeConcepts) {
-      const heat = dff.heatmaps[c];
-      if (!heat || g * g !== heat.length) continue;
-      const [r, gg, b] = conceptColorRgb(c);
-      const small = document.createElement("canvas");
-      small.width = g;
-      small.height = g;
-      const sctx = small.getContext("2d");
-      if (!sctx) continue;
-      const img = sctx.createImageData(g, g);
-      for (let p = 0; p < g * g; p++) {
-        const v = Math.max(0, Math.min(1, heat[p]));
-        const o = p * 4;
-        img.data[o] = r;
-        img.data[o + 1] = gg;
-        img.data[o + 2] = b;
-        img.data[o + 3] = Math.round(v * 150);
+    const small = document.createElement("canvas");
+    small.width = g;
+    small.height = g;
+    const sctx = small.getContext("2d");
+    if (!sctx) return;
+    const img = sctx.createImageData(g, g);
+    for (let p = 0; p < g * g; p++) {
+      let best = -1;
+      let bestVal = -1;
+      for (const c of activeConcepts) {
+        const heat = dff.heatmaps[c];
+        if (!heat || g * g !== heat.length) continue;
+        if (heat[p] > bestVal) {
+          bestVal = heat[p];
+          best = c;
+        }
       }
-      sctx.putImageData(img, 0, 0);
-      ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+      if (best < 0) continue;
+      const [r, gg, b] = conceptColorRgb(best);
+      const o = p * 4;
+      img.data[o] = r;
+      img.data[o + 1] = gg;
+      img.data[o + 2] = b;
+      img.data[o + 3] = Math.round(Math.max(0, Math.min(1, bestVal)) * 165);
     }
-    ctx.globalCompositeOperation = "source-over";
+    sctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
   }, [dff, activeConcepts, editMode, scaledWidth, scaledHeight]);
 
   // Window-level mouse handlers for drag/resize
