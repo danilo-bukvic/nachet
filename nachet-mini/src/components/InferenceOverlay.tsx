@@ -157,7 +157,7 @@ const InferenceOverlay = ({
 
     const g = dff.grid;
     const COLOR_ALPHA = 215; // colored stack (per-cell dominant concept)
-    const JET_ALPHA = 200; // jet heatmap (single concept)
+    const JET_ALPHA = 140; // jet heatmap (~0.55, matches the old seed cutouts)
     const small = document.createElement("canvas");
     small.width = g;
     small.height = g;
