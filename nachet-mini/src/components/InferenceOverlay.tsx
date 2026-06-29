@@ -520,22 +520,22 @@ const InferenceOverlay = ({
         !editMode &&
         (jetConcept !== undefined ||
           (activeConcepts && activeConcepts.length > 0)) && (
-        <canvas
-          ref={dffCanvasRef}
-          data-testid={`dff-overlay-${index}`}
-          width={Math.max(1, Math.round(scaledWidth))}
-          height={Math.max(1, Math.round(scaledHeight))}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-            zIndex: 250,
-          }}
-        />
-      )}
+          <canvas
+            ref={dffCanvasRef}
+            data-testid={`dff-overlay-${index}`}
+            width={Math.max(1, Math.round(scaledWidth))}
+            height={Math.max(1, Math.round(scaledHeight))}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              zIndex: 250,
+            }}
+          />
+        )}
 
       {/* box number (+ spinner when classifying) */}
       <Box
