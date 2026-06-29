@@ -139,11 +139,13 @@ const InferenceOverlay = ({
   );
 
   // Render the DFF overlay. Two modes:
-  //  - jet: a single concept as a blue→red heatmap (every cell colored).
+  //  - jet: a single concept as a blue→red heatmap.
   //  - stack: color each cell by whichever of the toggled-on concepts is
   //    strongest there (one concept -> its smooth map; several -> a clean
-  //    dominant-per-cell combined map, no wash). Drawn at grid resolution and
-  //    smoothly upscaled.
+  //    dominant-per-cell combined map, no wash).
+  // The 12x12 heatmap is bilinearly upsampled to a fine grid *before* coloring,
+  // so the jet ramp interpolates in value space (smooth blue→red) instead of
+  // canvas-blending final colors (which looks blocky/muddy).
   useEffect(() => {
     const canvas = dffCanvasRef.current;
     if (!canvas) return;
@@ -151,56 +153,80 @@ const InferenceOverlay = ({
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!dff || editMode) return;
-    const jetOn = jetConcept !== undefined;
-    const stack = activeConcepts ?? [];
-    if (!jetOn && stack.length === 0) return;
 
     const g = dff.grid;
     const COLOR_ALPHA = 215; // colored stack (per-cell dominant concept)
     const JET_ALPHA = 140; // jet heatmap (~0.55, matches the old seed cutouts)
-    const small = document.createElement("canvas");
-    small.width = g;
-    small.height = g;
-    const sctx = small.getContext("2d");
-    if (!sctx) return;
-    const img = sctx.createImageData(g, g);
+    const F = 192; // fine grid side for smooth value-space interpolation
+    const stack = activeConcepts ?? [];
+    const jc = jetConcept;
+    const jetHeat =
+      jc !== undefined && dff.heatmaps[jc]?.length === g * g
+        ? dff.heatmaps[jc]
+        : undefined;
+    if (!jetHeat && stack.length === 0) return;
 
-    if (jetOn) {
-      const heat = dff.heatmaps[jetConcept];
-      if (heat && g * g === heat.length) {
-        for (let p = 0; p < g * g; p++) {
-          const [r, gg, b] = jetColor(heat[p]);
-          const o = p * 4;
+    // Bilinear sample of a (g x g) heatmap at fractional (fx, fy) in [0, g-1].
+    const sample = (heat: Float32Array | number[], fx: number, fy: number) => {
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const x1 = Math.min(x0 + 1, g - 1);
+      const y1 = Math.min(y0 + 1, g - 1);
+      const dx = fx - x0;
+      const dy = fy - y0;
+      return (
+        heat[y0 * g + x0] * (1 - dx) * (1 - dy) +
+        heat[y0 * g + x1] * dx * (1 - dy) +
+        heat[y1 * g + x0] * (1 - dx) * dy +
+        heat[y1 * g + x1] * dx * dy
+      );
+    };
+
+    const fine = document.createElement("canvas");
+    fine.width = F;
+    fine.height = F;
+    const fctx = fine.getContext("2d");
+    if (!fctx) return;
+    const img = fctx.createImageData(F, F);
+    const span = g - 1;
+
+    for (let j = 0; j < F; j++) {
+      const fy = (j / (F - 1)) * span;
+      for (let i = 0; i < F; i++) {
+        const fx = (i / (F - 1)) * span;
+        const o = (j * F + i) * 4;
+        if (jetHeat) {
+          const [r, gg, b] = jetColor(sample(jetHeat, fx, fy));
           img.data[o] = r;
           img.data[o + 1] = gg;
           img.data[o + 2] = b;
           img.data[o + 3] = JET_ALPHA;
-        }
-      }
-    } else {
-      for (let p = 0; p < g * g; p++) {
-        let best = -1;
-        let bestVal = -1;
-        for (const c of stack) {
-          const heat = dff.heatmaps[c];
-          if (!heat || g * g !== heat.length) continue;
-          if (heat[p] > bestVal) {
-            bestVal = heat[p];
-            best = c;
+        } else {
+          let best = -1;
+          let bestVal = -1;
+          for (const c of stack) {
+            const heat = dff.heatmaps[c];
+            if (!heat || g * g !== heat.length) continue;
+            const v = sample(heat, fx, fy);
+            if (v > bestVal) {
+              bestVal = v;
+              best = c;
+            }
           }
+          if (best < 0) continue;
+          const [r, gg, b] = conceptColorRgb(best);
+          img.data[o] = r;
+          img.data[o + 1] = gg;
+          img.data[o + 2] = b;
+          img.data[o + 3] = Math.round(
+            Math.max(0, Math.min(1, bestVal)) * COLOR_ALPHA,
+          );
         }
-        if (best < 0) continue;
-        const [r, gg, b] = conceptColorRgb(best);
-        const o = p * 4;
-        img.data[o] = r;
-        img.data[o + 1] = gg;
-        img.data[o + 2] = b;
-        img.data[o + 3] = Math.round(Math.max(0, Math.min(1, bestVal)) * COLOR_ALPHA);
       }
     }
-    sctx.putImageData(img, 0, 0);
+    fctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(fine, 0, 0, canvas.width, canvas.height);
   }, [dff, activeConcepts, jetConcept, editMode, scaledWidth, scaledHeight]);
 
   // Window-level mouse handlers for drag/resize
