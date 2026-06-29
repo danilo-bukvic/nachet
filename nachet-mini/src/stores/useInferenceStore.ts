@@ -44,6 +44,12 @@ interface InferenceState {
    * toggled on, is overlaid on every seed of that run (multiple may be active).
    */
   dffConcepts: Map<string, Set<number>>;
+  /**
+   * Single concept shown as a jet (blue→red) heatmap, per run. Keyed by result
+   * key → concept index. Mutually exclusive with `dffConcepts`: the colored
+   * stack and the single jet heatmap are two modes, never both at once.
+   */
+  dffJet: Map<string, number>;
   /** Which result the user is currently viewing */
   activeResultKey: string | null;
   status: InferenceStatus;
@@ -74,8 +80,10 @@ interface InferenceState {
     modelConfigId: string,
     boxId: string,
   ) => DffBoxResult | undefined;
-  /** Toggle one DFF concept's overlay for a run (resultKey + concept index). */
+  /** Toggle one DFF concept in the colored stack for a run (clears jet mode). */
   toggleDffConcept: (resultKey: string, concept: number) => void;
+  /** Toggle the single jet-heatmap concept for a run (clears the colored stack). */
+  toggleDffJet: (resultKey: string, concept: number) => void;
   setActiveResultKey: (key: string | null) => void;
   removeResultsForImage: (imageIndex: number) => void;
   removeResult: (key: string) => void;
@@ -90,6 +98,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
   results: new Map(),
   dffResults: new Map(),
   dffConcepts: new Map(),
+  dffJet: new Map(),
   activeResultKey: null,
   status: "idle",
   modelLoaded: false,
@@ -151,7 +160,22 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
       else active.add(concept);
       if (active.size === 0) next.delete(key);
       else next.set(key, active);
-      return { dffConcepts: next };
+      // colored stack and jet heatmap are mutually exclusive
+      const jet = new Map(state.dffJet);
+      jet.delete(key);
+      return { dffConcepts: next, dffJet: jet };
+    });
+  },
+
+  toggleDffJet: (key: string, concept: number) => {
+    set((state) => {
+      const jet = new Map(state.dffJet);
+      if (jet.get(key) === concept) jet.delete(key);
+      else jet.set(key, concept);
+      // switching to jet mode clears the colored stack for this run
+      const concepts = new Map(state.dffConcepts);
+      concepts.delete(key);
+      return { dffJet: jet, dffConcepts: concepts };
     });
   },
 
@@ -180,6 +204,12 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           newConcepts.delete(key);
         }
       }
+      const newJet = new Map(state.dffJet);
+      for (const key of newJet.keys()) {
+        if (key.startsWith(prefix)) {
+          newJet.delete(key);
+        }
+      }
       const activeKey =
         state.activeResultKey?.startsWith(prefix) === true
           ? null
@@ -188,6 +218,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
         results: newMap,
         dffResults: newDff,
         dffConcepts: newConcepts,
+        dffJet: newJet,
         activeResultKey: activeKey,
       };
     });
@@ -224,6 +255,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
       results: new Map(),
       dffResults: new Map(),
       dffConcepts: new Map(),
+      dffJet: new Map(),
       activeResultKey: null,
       status: "idle",
       modelLoadProgress: null,

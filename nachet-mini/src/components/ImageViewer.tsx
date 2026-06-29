@@ -22,13 +22,16 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
 
   // DFF concept heatmaps (keyed "imageIndex:modelConfigId:boxId"); the active
   // result key gives the "imageIndex:modelConfigId" prefix for the shown result.
-  // `dffConcepts` holds which concept indices are toggled on for that run.
+  // `dffConcepts` = the colored concept stack; `dffJet` = the single jet-heatmap
+  // concept (the two are mutually exclusive modes for the active run).
   const dffResults = useInferenceStore((s) => s.dffResults);
   const dffConcepts = useInferenceStore((s) => s.dffConcepts);
+  const dffJet = useInferenceStore((s) => s.dffJet);
   const activeResultKey = useInferenceStore((s) => s.activeResultKey);
   const activeConcepts = activeResultKey
     ? Array.from(dffConcepts.get(activeResultKey) ?? [])
     : [];
+  const jetConcept = activeResultKey ? dffJet.get(activeResultKey) : undefined;
 
   // Box edit store
   const isEditing = useBoxEditStore((s) => s.isEditing);
@@ -261,6 +264,7 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
                     : undefined
                 }
                 activeConcepts={isEditing ? undefined : activeConcepts}
+                jetConcept={isEditing ? undefined : jetConcept}
                 onBoxUpdate={isEditing ? updateBox : undefined}
                 onBoxDelete={isEditing ? deleteBox : undefined}
                 onBoxSelect={isEditing ? setSelectedBoxIndex : undefined}

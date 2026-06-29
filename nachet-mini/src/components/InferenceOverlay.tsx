@@ -16,7 +16,7 @@ import {
 } from "react";
 import type { InferenceBox } from "@common/types";
 import type { DffBoxResult } from "@stores/useInferenceStore";
-import { conceptColorRgb } from "@common/dffColors";
+import { conceptColorRgb, jetColor } from "@common/dffColors";
 import { getScaledBounds, getUnscaledCoordinates } from "@common/imageutils";
 import { useIsPortrait } from "@hooks/useIsPortrait";
 import {
@@ -60,6 +60,8 @@ interface Props {
   dff?: DffBoxResult;
   /** Which concept indices to overlay on this box (empty/undefined = none). */
   activeConcepts?: number[];
+  /** When set, show only this concept as a jet (blue→red) heatmap instead. */
+  jetConcept?: number;
   onBoxUpdate?: (index: number, box: InferenceBox) => void;
   onBoxDelete?: (index: number) => void;
   onBoxSelect?: (index: number) => void;
@@ -86,6 +88,7 @@ const InferenceOverlay = ({
   isEditSelected = false,
   dff,
   activeConcepts,
+  jetConcept,
   onBoxUpdate,
   onBoxDelete,
   onBoxSelect,
@@ -135,50 +138,70 @@ const InferenceOverlay = ({
     [canvasWidth, canvasHeight, imageWidth, imageHeight],
   );
 
-  // Render the DFF overlay: color each grid cell by whichever of the toggled-on
-  // concepts is strongest there (alpha = that concept's activation), drawn at
-  // grid resolution and smoothly upscaled. One active concept -> that concept's
-  // smooth heatmap; several -> a clean "dominant per cell" combined map with no
-  // blending/wash between concepts.
+  // Render the DFF overlay. Two modes:
+  //  - jet: a single concept as a blue→red heatmap (every cell colored).
+  //  - stack: color each cell by whichever of the toggled-on concepts is
+  //    strongest there (one concept -> its smooth map; several -> a clean
+  //    dominant-per-cell combined map, no wash). Drawn at grid resolution and
+  //    smoothly upscaled.
   useEffect(() => {
     const canvas = dffCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!dff || editMode || !activeConcepts || activeConcepts.length === 0) {
-      return;
-    }
+    if (!dff || editMode) return;
+    const jetOn = jetConcept !== undefined;
+    const stack = activeConcepts ?? [];
+    if (!jetOn && stack.length === 0) return;
+
     const g = dff.grid;
+    const COLOR_ALPHA = 215; // colored stack (per-cell dominant concept)
+    const JET_ALPHA = 200; // jet heatmap (single concept)
     const small = document.createElement("canvas");
     small.width = g;
     small.height = g;
     const sctx = small.getContext("2d");
     if (!sctx) return;
     const img = sctx.createImageData(g, g);
-    for (let p = 0; p < g * g; p++) {
-      let best = -1;
-      let bestVal = -1;
-      for (const c of activeConcepts) {
-        const heat = dff.heatmaps[c];
-        if (!heat || g * g !== heat.length) continue;
-        if (heat[p] > bestVal) {
-          bestVal = heat[p];
-          best = c;
+
+    if (jetOn) {
+      const heat = dff.heatmaps[jetConcept];
+      if (heat && g * g === heat.length) {
+        for (let p = 0; p < g * g; p++) {
+          const [r, gg, b] = jetColor(heat[p]);
+          const o = p * 4;
+          img.data[o] = r;
+          img.data[o + 1] = gg;
+          img.data[o + 2] = b;
+          img.data[o + 3] = JET_ALPHA;
         }
       }
-      if (best < 0) continue;
-      const [r, gg, b] = conceptColorRgb(best);
-      const o = p * 4;
-      img.data[o] = r;
-      img.data[o + 1] = gg;
-      img.data[o + 2] = b;
-      img.data[o + 3] = Math.round(Math.max(0, Math.min(1, bestVal)) * 165);
+    } else {
+      for (let p = 0; p < g * g; p++) {
+        let best = -1;
+        let bestVal = -1;
+        for (const c of stack) {
+          const heat = dff.heatmaps[c];
+          if (!heat || g * g !== heat.length) continue;
+          if (heat[p] > bestVal) {
+            bestVal = heat[p];
+            best = c;
+          }
+        }
+        if (best < 0) continue;
+        const [r, gg, b] = conceptColorRgb(best);
+        const o = p * 4;
+        img.data[o] = r;
+        img.data[o + 1] = gg;
+        img.data[o + 2] = b;
+        img.data[o + 3] = Math.round(Math.max(0, Math.min(1, bestVal)) * COLOR_ALPHA);
+      }
     }
     sctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
-  }, [dff, activeConcepts, editMode, scaledWidth, scaledHeight]);
+  }, [dff, activeConcepts, jetConcept, editMode, scaledWidth, scaledHeight]);
 
   // Window-level mouse handlers for drag/resize
   useEffect(() => {
@@ -466,8 +489,11 @@ const InferenceOverlay = ({
       sx={sx}
       onMouseDown={editMode ? handleBoxMouseDown : undefined}
     >
-      {/* DFF concept overlay (one colored layer per active concept) */}
-      {dff && !editMode && activeConcepts && activeConcepts.length > 0 && (
+      {/* DFF overlay: colored concept stack or a single jet heatmap */}
+      {dff &&
+        !editMode &&
+        (jetConcept !== undefined ||
+          (activeConcepts && activeConcepts.length > 0)) && (
         <canvas
           ref={dffCanvasRef}
           data-testid={`dff-overlay-${index}`}
