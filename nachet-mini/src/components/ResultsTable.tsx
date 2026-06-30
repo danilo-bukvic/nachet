@@ -9,13 +9,17 @@ import {
   CardHeader,
   CircularProgress,
   IconButton,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SwitchLeftIcon from "@mui/icons-material/SwitchLeft";
 import CropFreeIcon from "@mui/icons-material/CropFree";
 import LabelIcon from "@mui/icons-material/Label";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import type { InferenceResult } from "@common/types";
 import { useTranslation } from "react-i18next";
+import { useInferenceStore } from "@stores/useInferenceStore";
 
 interface Props {
   result: InferenceResult | null;
@@ -28,6 +32,13 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
 
+  // CAM overlays: per box, which species' map (if any) is shown on the image.
+  const camResults = useInferenceStore((s) => s.camResults);
+  const camVisible = useInferenceStore((s) => s.camVisible);
+  const toggleCamClass = useInferenceStore((s) => s.toggleCamClass);
+  const activeResultKey = useInferenceStore((s) => s.activeResultKey);
+  const boxes = result?.boxes ?? [];
+
   const handleSelect = (key: string): void => {
     setSelectedLabel(selectedLabel === key ? "all" : key);
   };
@@ -36,41 +47,84 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
     setExpandedRow(expandedRow === rowId ? null : rowId);
   };
 
-  const renderTopResults = (topN: Array<{ score: number; label: string }>) => (
-    <>
-      <Typography
-        variant="subtitle2"
-        style={{
-          fontWeight: "bold",
-          marginTop: "-15px",
-          paddingTop: "0px",
-          paddingBottom: "4px",
-          fontSize: "0.75em",
-        }}
-      >
-        {t("resultsTable.topResults")}
-      </Typography>
-      {topN.map((item, i) => {
-        const pct =
-          item.score > 0 && item.score < 0.0001
-            ? "< 0.01%"
-            : `${(item.score * 100).toFixed(2)}%`;
-        return (
-          <Typography
-            key={i}
-            variant="body2"
-            style={{
-              fontSize: "0.75em",
-              paddingTop: "1px",
-              paddingBottom: "1px",
-            }}
-          >
-            {`${i + 1}. ${item.label}: ${pct}`}
-          </Typography>
-        );
-      })}
-    </>
-  );
+  const fmtPct = (score: number): string =>
+    score > 0 && score < 0.0001 ? "< 0.01%" : `${(score * 100).toFixed(2)}%`;
+
+  // Top-K list for one box. When CAM maps exist for the box, each species gets
+  // an eyeball that overlays that species' activation map on the seed (single
+  // species at a time per box), so you can see — and compare — which regions
+  // drive top-1 vs top-2, etc.
+  const renderTopResults = (
+    topN: Array<{ score: number; label: string }>,
+    boxKey: string,
+  ) => {
+    const cam = boxKey ? camResults.get(boxKey) : undefined;
+    const shownClass = boxKey ? camVisible.get(boxKey) : undefined;
+    return (
+      <>
+        <Typography
+          variant="subtitle2"
+          style={{
+            fontWeight: "bold",
+            marginTop: "-15px",
+            paddingTop: "0px",
+            paddingBottom: "4px",
+            fontSize: "0.75em",
+          }}
+        >
+          {t("resultsTable.topResults")}
+        </Typography>
+        {topN.map((item, i) => {
+          // Match this top-K row to its CAM class (same order from the worker).
+          const camClass = cam?.classes[i];
+          const on =
+            camClass !== undefined && shownClass === camClass.classIndex;
+          return (
+            <Box
+              key={i}
+              sx={{ display: "flex", alignItems: "center", gap: "4px" }}
+            >
+              <Typography
+                variant="body2"
+                style={{
+                  fontSize: "0.75em",
+                  paddingTop: "1px",
+                  paddingBottom: "1px",
+                  flex: 1,
+                }}
+              >
+                {`${i + 1}. ${item.label}: ${fmtPct(item.score)}`}
+              </Typography>
+              {camClass && (
+                <Tooltip title="Show activation map for this species">
+                  <IconButton
+                    size="small"
+                    sx={{ padding: "1px" }}
+                    aria-label={`activation map for ${item.label}`}
+                    aria-pressed={on}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleCamClass(boxKey, camClass.classIndex);
+                    }}
+                  >
+                    {on ? (
+                      <VisibilityIcon
+                        sx={{ fontSize: "1.6vh", color: "#1565c0" }}
+                      />
+                    ) : (
+                      <VisibilityOffOutlinedIcon
+                        sx={{ fontSize: "1.6vh", color: "#bdbdbd" }}
+                      />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          );
+        })}
+      </>
+    );
+  };
 
   const labelOccurrence = result?.labelOccurrence ?? {};
   const classifications = result?.classifications ?? [];
@@ -355,7 +409,13 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
                       <TableRow>
                         <TableCell colSpan={3}>
                           <Box p={2}>
-                            {boxTopN.length > 0 && renderTopResults(boxTopN)}
+                            {boxTopN.length > 0 &&
+                              renderTopResults(
+                                boxTopN,
+                                activeResultKey
+                                  ? `${activeResultKey}:${boxes[classIdx]?.boxId}`
+                                  : "",
+                              )}
                           </Box>
                         </TableCell>
                       </TableRow>

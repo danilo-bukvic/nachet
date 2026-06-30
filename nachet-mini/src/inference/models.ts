@@ -119,17 +119,22 @@ export type WorkerOutMessage =
       result: InferenceResult;
     }
   | {
-      // Deep Feature Factorization concept heatmaps for one classified box.
-      // Streamed separately from the classification result so the boxes render
-      // immediately and DFF overlays arrive as each seed is factorized.
-      type: "dff-result";
+      // Class Activation Maps for one classified box: one heatmap per top-K
+      // class, showing which regions drive that species' score. Streamed
+      // separately so boxes render immediately and overlays arrive per seed.
+      type: "cam-result";
       imageIndex: number;
       modelConfigId: string;
       boxId: string;
       /** spatial grid side (e.g. 12 → 12×12 = 144 tokens). */
       grid: number;
-      /** K concept heatmaps, each `grid*grid` floats normalized to [0, 1]. */
-      heatmaps: number[][];
+      /** Per top-K class: index, label, score, and its `grid*grid` heatmap [0,1]. */
+      classes: {
+        classIndex: number;
+        label: string;
+        score: number;
+        heatmap: number[];
+      }[];
     }
   | { type: "error"; message: string };
 

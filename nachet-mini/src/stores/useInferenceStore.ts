@@ -18,38 +18,41 @@ export interface ModelLoadProgress {
 export const resultKey = (imageIndex: number, modelConfigId: string): string =>
   `${imageIndex}:${modelConfigId}`;
 
-/** Per-box DFF key: "imageIndex:modelConfigId:boxId" */
-export const dffKey = (
+/** Per-box key: "imageIndex:modelConfigId:boxId" */
+export const boxKey = (
   imageIndex: number,
   modelConfigId: string,
   boxId: string,
 ): string => `${resultKey(imageIndex, modelConfigId)}:${boxId}`;
 
-/** Deep Feature Factorization concept heatmaps for one classified box. */
-export interface DffBoxResult {
+/** One top-K class's CAM for a box. */
+export interface CamClass {
+  classIndex: number;
+  label: string;
+  score: number;
+  /** grid*grid floats in [0, 1] (row-major). */
+  heatmap: number[];
+}
+
+/** Class Activation Maps for one classified box. */
+export interface CamBoxResult {
   /** spatial grid side (e.g. 12 → 12×12). */
   grid: number;
-  /** K concept heatmaps, each `grid*grid` floats in [0, 1]. */
-  heatmaps: number[][];
+  /** one entry per top-K class. */
+  classes: CamClass[];
 }
 
 interface InferenceState {
   /** Results keyed by "imageIndex:modelConfigId" */
   results: Map<string, InferenceResult>;
-  /** DFF concept heatmaps keyed by "imageIndex:modelConfigId:boxId" */
-  dffResults: Map<string, DffBoxResult>;
+  /** CAM maps keyed by "imageIndex:modelConfigId:boxId" */
+  camResults: Map<string, CamBoxResult>;
   /**
-   * Which DFF concepts are currently overlaid, per run. Keyed by the result key
-   * "imageIndex:modelConfigId" → set of active concept indices. A concept, once
-   * toggled on, is overlaid on every seed of that run (multiple may be active).
+   * Which class's CAM is currently overlaid, per box. Keyed by the box key →
+   * class index. One species at a time per box (overlaying class maps doesn't
+   * stack meaningfully); different boxes may show different species at once.
    */
-  dffConcepts: Map<string, Set<number>>;
-  /**
-   * Single concept shown as a jet (blue→red) heatmap, per run. Keyed by result
-   * key → concept index. Mutually exclusive with `dffConcepts`: the colored
-   * stack and the single jet heatmap are two modes, never both at once.
-   */
-  dffJet: Map<string, number>;
+  camVisible: Map<string, number>;
   /** Which result the user is currently viewing */
   activeResultKey: string | null;
   status: InferenceStatus;
@@ -69,21 +72,14 @@ interface InferenceState {
   getResultsForImage: (
     imageIndex: number,
   ) => Array<{ modelConfigId: string; result: InferenceResult }>;
-  setDffResult: (
+  setCamResult: (
     imageIndex: number,
     modelConfigId: string,
     boxId: string,
-    dff: DffBoxResult,
+    cam: CamBoxResult,
   ) => void;
-  getDffResult: (
-    imageIndex: number,
-    modelConfigId: string,
-    boxId: string,
-  ) => DffBoxResult | undefined;
-  /** Toggle one DFF concept in the colored stack for a run (clears jet mode). */
-  toggleDffConcept: (resultKey: string, concept: number) => void;
-  /** Toggle the single jet-heatmap concept for a run (clears the colored stack). */
-  toggleDffJet: (resultKey: string, concept: number) => void;
+  /** Toggle a class's CAM overlay for a box (clears it if that class is on). */
+  toggleCamClass: (key: string, classIndex: number) => void;
   setActiveResultKey: (key: string | null) => void;
   removeResultsForImage: (imageIndex: number) => void;
   removeResult: (key: string) => void;
@@ -96,9 +92,8 @@ interface InferenceState {
 
 export const useInferenceStore = create<InferenceState>()((set, get) => ({
   results: new Map(),
-  dffResults: new Map(),
-  dffConcepts: new Map(),
-  dffJet: new Map(),
+  camResults: new Map(),
+  camVisible: new Map(),
   activeResultKey: null,
   status: "idle",
   modelLoaded: false,
@@ -134,48 +129,26 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     return entries;
   },
 
-  setDffResult: (
+  setCamResult: (
     imageIndex: number,
     modelConfigId: string,
     boxId: string,
-    dff: DffBoxResult,
+    cam: CamBoxResult,
   ) => {
-    const key = dffKey(imageIndex, modelConfigId, boxId);
+    const key = boxKey(imageIndex, modelConfigId, boxId);
     set((state) => {
-      const newMap = new Map(state.dffResults);
-      newMap.set(key, dff);
-      return { dffResults: newMap };
+      const newMap = new Map(state.camResults);
+      newMap.set(key, cam);
+      return { camResults: newMap };
     });
   },
 
-  getDffResult: (imageIndex: number, modelConfigId: string, boxId: string) => {
-    return get().dffResults.get(dffKey(imageIndex, modelConfigId, boxId));
-  },
-
-  toggleDffConcept: (key: string, concept: number) => {
+  toggleCamClass: (key: string, classIndex: number) => {
     set((state) => {
-      const next = new Map(state.dffConcepts);
-      const active = new Set(next.get(key) ?? []);
-      if (active.has(concept)) active.delete(concept);
-      else active.add(concept);
-      if (active.size === 0) next.delete(key);
-      else next.set(key, active);
-      // colored stack and jet heatmap are mutually exclusive
-      const jet = new Map(state.dffJet);
-      jet.delete(key);
-      return { dffConcepts: next, dffJet: jet };
-    });
-  },
-
-  toggleDffJet: (key: string, concept: number) => {
-    set((state) => {
-      const jet = new Map(state.dffJet);
-      if (jet.get(key) === concept) jet.delete(key);
-      else jet.set(key, concept);
-      // switching to jet mode clears the colored stack for this run
-      const concepts = new Map(state.dffConcepts);
-      concepts.delete(key);
-      return { dffJet: jet, dffConcepts: concepts };
+      const next = new Map(state.camVisible);
+      if (next.get(key) === classIndex) next.delete(key);
+      else next.set(key, classIndex);
+      return { camVisible: next };
     });
   },
 
@@ -192,22 +165,16 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           newMap.delete(key);
         }
       }
-      const newDff = new Map(state.dffResults);
-      for (const key of newDff.keys()) {
+      const newCam = new Map(state.camResults);
+      for (const key of newCam.keys()) {
         if (key.startsWith(prefix)) {
-          newDff.delete(key);
+          newCam.delete(key);
         }
       }
-      const newConcepts = new Map(state.dffConcepts);
-      for (const key of newConcepts.keys()) {
+      const newVisible = new Map(state.camVisible);
+      for (const key of newVisible.keys()) {
         if (key.startsWith(prefix)) {
-          newConcepts.delete(key);
-        }
-      }
-      const newJet = new Map(state.dffJet);
-      for (const key of newJet.keys()) {
-        if (key.startsWith(prefix)) {
-          newJet.delete(key);
+          newVisible.delete(key);
         }
       }
       const activeKey =
@@ -216,9 +183,8 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           : state.activeResultKey;
       return {
         results: newMap,
-        dffResults: newDff,
-        dffConcepts: newConcepts,
-        dffJet: newJet,
+        camResults: newCam,
+        camVisible: newVisible,
         activeResultKey: activeKey,
       };
     });
@@ -253,9 +219,8 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
   clearResults: () => {
     set({
       results: new Map(),
-      dffResults: new Map(),
-      dffConcepts: new Map(),
-      dffJet: new Map(),
+      camResults: new Map(),
+      camVisible: new Map(),
       activeResultKey: null,
       status: "idle",
       modelLoadProgress: null,

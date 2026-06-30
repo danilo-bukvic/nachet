@@ -13,12 +13,12 @@ import {
 import type { ModelConfig, WorkerInMessage, WorkerOutMessage } from "./models";
 import type { InferenceResult, InferenceBox } from "@common/types";
 import { loadSam3, runSam3, unloadSam3 } from "./sam3";
-import { computeDff } from "./dff";
+import { computeCam } from "./cam";
 
-// Deep Feature Factorization: number of concepts (matches the nachet-model-ccds
-// GradCAM/DFF notebook). DFF runs only when the loaded classifier exposes the
-// `swin_layernorm` output (the patched model); otherwise it's silently skipped.
-const DFF_COMPONENTS = 4;
+// Class Activation Mapping runs only when the loaded classifier exposes the
+// `swin_layernorm` output (the patched 101spp model); otherwise it's skipped.
+// One heatmap is produced per top-K class so the UI can show which regions
+// drive each candidate species.
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -809,29 +809,38 @@ const classifyBoxes = async (
         },
       });
 
-      // ── Deep Feature Factorization ───────────────────────────────────────
+      // ── Class Activation Mapping ─────────────────────────────────────────
       // Only when the loaded classifier is the patched model exposing
-      // `swin_layernorm` (1, tokens, channels). Streamed per box so heatmaps
-      // arrive after each seed is classified.
+      // `swin_layernorm` (1, tokens, channels). One heatmap per top-K class so
+      // the UI can show which regions drive each candidate species. Streamed
+      // per box so maps arrive after each seed is classified.
       const featTensor = rawOut.swin_layernorm as
         | { data?: Float32Array; dims?: number[] }
         | undefined;
       if (featTensor?.data && featTensor.dims?.length === 3) {
         try {
           const [, tokens, channels] = featTensor.dims;
-          const dff = computeDff(featTensor.data, tokens, channels, {
-            k: DFF_COMPONENTS,
-          });
+          const cam = await computeCam(
+            featTensor.data,
+            tokens,
+            channels,
+            topIdxList,
+          );
           send({
-            type: "dff-result",
+            type: "cam-result",
             imageIndex,
             modelConfigId,
             boxId: boxes[i].boxId,
-            grid: dff.grid,
-            heatmaps: dff.heatmaps.map((h) => Array.from(h)),
+            grid: cam.grid,
+            classes: topIdxList.map((idx: number, j: number) => ({
+              classIndex: idx,
+              label: classResults[j]?.label ?? `LABEL_${idx}`,
+              score: classResults[j]?.score ?? 0,
+              heatmap: Array.from(cam.maps[j]),
+            })),
           });
         } catch (e) {
-          console.warn("[worker] DFF failed for box", i, e);
+          console.warn("[worker] CAM failed for box", i, e);
         }
       }
     } finally {
