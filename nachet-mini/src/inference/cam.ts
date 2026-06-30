@@ -74,9 +74,10 @@ export async function computeCam(
 
   const W = await loadHead();
 
-  const maps = classIndices.map((c) => {
+  const maps = classIndices.map((rawC) => {
+    const c = Number(rawC); // guard against BigInt indices from int64 tensors
     const map = new Float32Array(tokens);
-    if (c < 0 || c >= NUM_CLASSES) return map; // out of range -> blank
+    if (!Number.isFinite(c) || c < 0 || c >= NUM_CLASSES) return map; // blank
     const wOff = c * NUM_FEATURES;
     let mn = Infinity;
     let mx = -Infinity;

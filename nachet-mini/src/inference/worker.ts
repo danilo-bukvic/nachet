@@ -770,7 +770,11 @@ const classifyBoxes = async (
 
       const clsId2label = classifierModel.config?.id2label ?? {};
       const topValList = topValues.tolist() as number[];
-      const topIdxList = topIndices.tolist() as number[];
+      // tolist() of an int64 index tensor yields BigInt; coerce to Number so
+      // downstream arithmetic (CAM weight indexing) doesn't mix BigInt + Number.
+      const topIdxList = (topIndices.tolist() as Array<number | bigint>).map(
+        Number,
+      );
 
       const classResults = topIdxList.map((idx: number, j: number) => ({
         label: clsId2label[idx] ?? `LABEL_${idx}`,
