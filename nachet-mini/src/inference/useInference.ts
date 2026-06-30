@@ -82,15 +82,6 @@ export const useInference = (currentIndex: number) => {
           setStatus("complete");
           break;
         case "cam-result":
-          // TEMP DEBUG
-          console.log(
-            "[camdbg] received",
-            msg.imageIndex,
-            JSON.stringify(msg.modelConfigId),
-            JSON.stringify(msg.boxId),
-            "classes:",
-            msg.classes?.length,
-          );
           setCamResult(msg.imageIndex, msg.modelConfigId, msg.boxId, {
             grid: msg.grid,
             classes: msg.classes,

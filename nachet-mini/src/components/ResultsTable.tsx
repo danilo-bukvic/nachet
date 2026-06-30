@@ -60,15 +60,6 @@ const ResultsTable = ({ result, switchTable, onSwitchTableChange }: Props) => {
   ) => {
     const cam = boxKey ? camResults.get(boxKey) : undefined;
     const shownClass = boxKey ? camVisible.get(boxKey) : undefined;
-    // TEMP DEBUG: pinpoint why the eyeball doesn't show.
-    console.log(
-      "[camdbg] lookup",
-      JSON.stringify(boxKey),
-      "found:",
-      !!cam,
-      "| camResults keys:",
-      [...camResults.keys()],
-    );
     return (
       <>
         <Typography
