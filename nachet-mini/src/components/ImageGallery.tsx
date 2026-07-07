@@ -23,6 +23,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import type { Images, InferenceResult } from "@common/types";
 import { resultKey } from "@stores/useInferenceStore";
 import { useInferenceQueueStore } from "@stores/useInferenceQueueStore";
+import CamRankToggles from "@components/CamRankToggles";
 import { useTranslation } from "react-i18next";
 import { useState, useCallback, useMemo } from "react";
 interface Props {
@@ -515,6 +516,7 @@ const ImageGallery = ({
                                 })}
                               </Box>
                             </Box>
+                            <CamRankToggles resultKey={key} result={result} />
                           </Box>
                         );
                       })}

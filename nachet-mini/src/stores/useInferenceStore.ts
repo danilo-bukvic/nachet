@@ -48,11 +48,12 @@ interface InferenceState {
   /** CAM maps keyed by "imageIndex:modelConfigId:boxId" */
   camResults: Map<string, CamBoxResult>;
   /**
-   * Which class's CAM is currently overlaid, per box. Keyed by the box key →
-   * class index. One species at a time per box (overlaying class maps doesn't
-   * stack meaningfully); different boxes may show different species at once.
+   * Which prediction rank's CAM is overlaid, per run. Keyed by the result key
+   * "imageIndex:modelConfigId" → rank index (0 = top-1, 1 = top-2, …). One rank
+   * at a time (single-select); when set, every seed of that run shows its own
+   * rank-N species map. Absent = no overlay.
    */
-  camVisible: Map<string, number>;
+  camRank: Map<string, number>;
   /** Which result the user is currently viewing */
   activeResultKey: string | null;
   status: InferenceStatus;
@@ -78,8 +79,8 @@ interface InferenceState {
     boxId: string,
     cam: CamBoxResult,
   ) => void;
-  /** Toggle a class's CAM overlay for a box (clears it if that class is on). */
-  toggleCamClass: (key: string, classIndex: number) => void;
+  /** Toggle a prediction rank's CAM overlay for a run (clears it if on). */
+  toggleCamRank: (resultKey: string, rank: number) => void;
   setActiveResultKey: (key: string | null) => void;
   removeResultsForImage: (imageIndex: number) => void;
   removeResult: (key: string) => void;
@@ -93,7 +94,7 @@ interface InferenceState {
 export const useInferenceStore = create<InferenceState>()((set, get) => ({
   results: new Map(),
   camResults: new Map(),
-  camVisible: new Map(),
+  camRank: new Map(),
   activeResultKey: null,
   status: "idle",
   modelLoaded: false,
@@ -143,12 +144,12 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     });
   },
 
-  toggleCamClass: (key: string, classIndex: number) => {
+  toggleCamRank: (key: string, rank: number) => {
     set((state) => {
-      const next = new Map(state.camVisible);
-      if (next.get(key) === classIndex) next.delete(key);
-      else next.set(key, classIndex);
-      return { camVisible: next };
+      const next = new Map(state.camRank);
+      if (next.get(key) === rank) next.delete(key);
+      else next.set(key, rank);
+      return { camRank: next };
     });
   },
 
@@ -171,10 +172,10 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
           newCam.delete(key);
         }
       }
-      const newVisible = new Map(state.camVisible);
-      for (const key of newVisible.keys()) {
+      const newRank = new Map(state.camRank);
+      for (const key of newRank.keys()) {
         if (key.startsWith(prefix)) {
-          newVisible.delete(key);
+          newRank.delete(key);
         }
       }
       const activeKey =
@@ -184,7 +185,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
       return {
         results: newMap,
         camResults: newCam,
-        camVisible: newVisible,
+        camRank: newRank,
         activeResultKey: activeKey,
       };
     });
@@ -220,7 +221,7 @@ export const useInferenceStore = create<InferenceState>()((set, get) => ({
     set({
       results: new Map(),
       camResults: new Map(),
-      camVisible: new Map(),
+      camRank: new Map(),
       activeResultKey: null,
       status: "idle",
       modelLoadProgress: null,

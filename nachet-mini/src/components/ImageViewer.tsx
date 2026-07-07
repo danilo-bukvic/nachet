@@ -21,11 +21,13 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
   const isPortrait = useIsPortrait();
 
   // CAM heatmaps (keyed "imageIndex:modelConfigId:boxId"); the active result key
-  // gives the "imageIndex:modelConfigId" prefix for the shown result. For each
-  // box, `camVisible` holds which class's CAM (if any) is toggled on.
+  // gives the "imageIndex:modelConfigId" prefix for the shown result. `camRank`
+  // holds the toggled prediction rank for that run — each box shows its own
+  // rank-N species map.
   const camResults = useInferenceStore((s) => s.camResults);
-  const camVisible = useInferenceStore((s) => s.camVisible);
+  const camRank = useInferenceStore((s) => s.camRank);
   const activeResultKey = useInferenceStore((s) => s.activeResultKey);
+  const activeRank = activeResultKey ? camRank.get(activeResultKey) : undefined;
 
   // Box edit store
   const isEditing = useBoxEditStore((s) => s.isEditing);
@@ -231,16 +233,15 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
           {/* Boxes */}
           {containerSize.width > 0 &&
             displayBoxes.map((box, i) => {
-              // CAM heatmap for the class toggled on for this box (if any).
+              // CAM heatmap for this box at the toggled prediction rank (if any).
               const camKey =
-                !isEditing && activeResultKey
+                !isEditing && activeResultKey && activeRank !== undefined
                   ? `${activeResultKey}:${box.boxId}`
                   : null;
               const camRes = camKey ? camResults.get(camKey) : undefined;
-              const camClass = camKey ? camVisible.get(camKey) : undefined;
               const camEntry =
-                camRes && camClass !== undefined
-                  ? camRes.classes.find((c) => c.classIndex === camClass)
+                camRes && activeRank !== undefined
+                  ? camRes.classes[activeRank]
                   : undefined;
               return (
                 <InferenceOverlay
