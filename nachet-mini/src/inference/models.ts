@@ -35,6 +35,10 @@ export interface ModelConfig {
    * Detector kind. Defaults to `"object-detection"`. The
    * `text-promptable-segmentation` kind is what drives the prompt UI and the
    * worker's `prompt` expectation — there's no separate boolean for it.
+   *
+   * Same value as `DetectorModelEntry.kind`; `buildModelConfig` copies it here
+   * and prefixes it `detector` because `ModelConfig` flattens the selected
+   * detector and classifier entries into one object sent to the worker.
    */
   detectorKind?: DetectorKind;
   /** For multi-file detectors: ONNX filenames within `detectorModel`'s HF repo. */
@@ -59,6 +63,9 @@ export interface DetectorModelEntry {
    * What kind of detector this is. Defaults to `"object-detection"`.
    * `text-promptable-segmentation` (e.g. SAM3) is what makes the UI show a
    * text-prompt input — no separate `requiresPrompt` flag needed.
+   *
+   * This is the registry-entry field; `buildModelConfig` copies it onto the
+   * flattened `ModelConfig` as `detectorKind`.
    */
   kind?: DetectorKind;
   /** For multi-file detectors (e.g. SAM3): which ONNX files make up the model. */
@@ -210,14 +217,11 @@ export const CLASSIFIER_MODELS: ClassifierModelEntry[] = [
     minBoxSize: 384,
   },
   {
-    id: "swin-L 101spp DFF",
-    // DFF-enabled mirror of the 101spp repo: identical model, but its
-    // onnx/model.onnx is the patched FP16 export that also outputs
-    // `swin_layernorm`. Selecting this entry surfaces the Deep Feature
-    // Factorization UI (concept-map toggle + per-seed cutouts); the plain
-    // "swin-L 101spp" entry above has no swin_layernorm output, so that UI
-    // simply doesn't appear for it. Demo-only — the canonical PR should host
-    // the patched export on the official repo rather than a -dff mirror.
+    id: "swin-L 101spp CAM",
+    // Same 101spp model, but this repo's onnx/model.onnx is the patched FP16
+    // export that also outputs `swin_layernorm`. Selecting this entry enables
+    // the per-species Class Activation Maps in the results panel; the plain
+    // "swin-L 101spp" entry above has no such output, so that UI stays hidden.
     model: "cfia-ai-lab/swin-large-patch4-window12-384-in22k-101spp-ft-dff",
     topK: 5,
     minBoxSize: 384,
@@ -241,6 +245,21 @@ export const DEFAULT_CLASSIFIER = CLASSIFIER_MODELS[0];
 export const huggingFaceUrl = (modelId: string): string => {
   return `https://huggingface.co/${modelId}`;
 };
+
+/** Build the download URL for a file hosted in a Hugging Face model repo. */
+export const huggingFaceFileUrl = (
+  modelId: string,
+  filename: string,
+): string => {
+  return `https://huggingface.co/${modelId}/resolve/main/${filename}`;
+};
+
+/**
+ * Filename of the extracted Swin classifier-head weights (101 × 1536 float32),
+ * hosted alongside the patched model on Hugging Face and fetched at CAM time.
+ * Model-specific, so it lives in the model repo rather than the app bundle.
+ */
+export const CLASSIFIER_HEAD_FILENAME = "classifier_head_101spp.f32.bin";
 
 /** Assemble a ModelConfig from independent detector and classifier selections. */
 export const buildModelConfig = (

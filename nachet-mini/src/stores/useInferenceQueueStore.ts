@@ -4,11 +4,9 @@ export interface QueuedInferenceItem {
   id: string;
   imageSrc: string;
   imageIndex: number;
-  /**
-   * Text prompt for promptable detectors (e.g. SAM3). Captured at enqueue time
-   * so each queued item carries the prompt that was active when it was added;
-   * `null` for closed-vocabulary detectors that don't take a prompt.
-   */
+  // Text prompt captured at enqueue time for text-promptable detectors (null
+  // for closed-vocabulary detectors). Frozen here so a later prompt edit can't
+  // change what an already-queued image runs with.
   prompt: string | null;
   status: "pending" | "processing" | "done" | "cancelled";
   addedAt: number;
@@ -26,12 +24,12 @@ interface InferenceQueueState {
     item: Omit<
       QueuedInferenceItem,
       | "id"
+      | "prompt"
       | "status"
       | "addedAt"
       | "inferenceStartedAt"
       | "detectionDoneAt"
       | "detectedBoxCount"
-      | "prompt"
     > & { prompt?: string | null },
   ) => void;
   cancel: (id: string) => void;
@@ -53,8 +51,8 @@ export const useInferenceQueueStore = create<InferenceQueueState>()((set) => ({
         ...state.queue,
         {
           ...item,
-          prompt: item.prompt ?? null,
           id: crypto.randomUUID(),
+          prompt: item.prompt ?? null,
           status: "pending",
           addedAt: Date.now(),
           inferenceStartedAt: null,
