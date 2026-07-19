@@ -1,14 +1,15 @@
 import { Box, IconButton, Tooltip } from "@mui/material";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import { useTranslation } from "react-i18next";
 import type { InferenceResult } from "@common/types";
 import { useInferenceStore } from "@stores/useInferenceStore";
 
 /**
  * Global CAM rank toggles shown under a run in the Images panel.
  *
- * One toggle per prediction rank ("Concept 1" = each seed's top-1 species,
- * "Concept 2" = each seed's 2nd, …). Turning one on overlays that rank's
+ * One toggle per prediction rank ("Top 1" = each seed's top-1 species,
+ * "Top 2" = each seed's 2nd, …). Turning one on overlays that rank's
  * activation map on *every* seed of the run at once; single-select (not
  * stackable), so one rank shows at a time.
  */
@@ -20,6 +21,7 @@ interface Props {
 }
 
 const CamRankToggles = ({ resultKey, result }: Props) => {
+  const { t } = useTranslation("main");
   const camResults = useInferenceStore((s) => s.camResults);
   const camRank = useInferenceStore((s) => s.camRank);
   const toggleCamRank = useInferenceStore((s) => s.toggleCamRank);
@@ -67,12 +69,12 @@ const CamRankToggles = ({ resultKey, result }: Props) => {
               "&:hover": { backgroundColor: on ? "#E3F2FD" : "#F5F5F5" },
             }}
           >
-            <Box sx={{ flex: 1 }}>{`Concept ${r + 1}`}</Box>
-            <Tooltip title="Overlay this prediction rank on all seeds">
+            <Box sx={{ flex: 1 }}>{t("cam.rank", { n: r + 1 })}</Box>
+            <Tooltip title={t("cam.overlayTooltip")}>
               <IconButton
                 size="small"
                 sx={{ padding: "0.2vh" }}
-                aria-label={`overlay concept ${r + 1}`}
+                aria-label={t("cam.overlayLabel", { n: r + 1 })}
                 aria-pressed={on}
                 onClick={(e) => {
                   e.stopPropagation();

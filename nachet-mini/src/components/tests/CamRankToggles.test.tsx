@@ -1,12 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, cleanup, fireEvent } from "@testing-library/react";
+import {
+  render as rtlRender,
+  cleanup,
+  fireEvent,
+} from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
+import type { ReactElement } from "react";
 import type { InferenceBox, InferenceResult } from "@common/types";
 import {
   useInferenceStore,
   boxKey,
   type CamBoxResult,
 } from "@stores/useInferenceStore";
+import i18n from "../../i18n";
 import CamRankToggles from "../CamRankToggles";
+
+// Render through the i18n provider so the component's t() calls resolve to the
+// (English by default) translations rather than raw keys.
+const render = (ui: ReactElement) =>
+  rtlRender(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
 
 const RESULT_KEY = "0:model-a";
 
@@ -55,7 +67,10 @@ const seedCam = (boxId: string, classCount: number) => {
 };
 
 describe("CamRankToggles", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Force a deterministic language so text/aria-label assertions don't depend
+    // on the runner's detected locale (CI can resolve to French).
+    await i18n.changeLanguage("en");
     useInferenceStore.setState({
       camResults: new Map(),
       camRank: new Map(),
@@ -72,14 +87,14 @@ describe("CamRankToggles", () => {
     expect(container.querySelector('[data-testid="cam-rank-0"]')).toBeNull();
   });
 
-  it("renders one toggle per CAM class, labelled Concept 1..N", () => {
+  it("renders one toggle per CAM class, labelled Top 1..N", () => {
     seedCam("box-1", 3);
     const { getByTestId } = render(
       <CamRankToggles resultKey={RESULT_KEY} result={makeResult(["box-1"])} />,
     );
-    expect(getByTestId("cam-rank-0")).toHaveTextContent("Concept 1");
-    expect(getByTestId("cam-rank-1")).toHaveTextContent("Concept 2");
-    expect(getByTestId("cam-rank-2")).toHaveTextContent("Concept 3");
+    expect(getByTestId("cam-rank-0")).toHaveTextContent("Top 1");
+    expect(getByTestId("cam-rank-1")).toHaveTextContent("Top 2");
+    expect(getByTestId("cam-rank-2")).toHaveTextContent("Top 3");
   });
 
   it("derives the rank count from the first box that has CAM data", () => {
@@ -132,7 +147,7 @@ describe("CamRankToggles", () => {
     const { getByLabelText } = render(
       <CamRankToggles resultKey={RESULT_KEY} result={makeResult(["box-1"])} />,
     );
-    fireEvent.click(getByLabelText("overlay concept 2"));
+    fireEvent.click(getByLabelText("overlay top 2"));
     // stopPropagation means only the button handler runs, not the row's too;
     // a single toggle leaves rank 1 active rather than cancelling itself out.
     expect(useInferenceStore.getState().camRank.get(RESULT_KEY)).toBe(1);

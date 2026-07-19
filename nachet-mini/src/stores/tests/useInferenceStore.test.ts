@@ -420,3 +420,122 @@ describe("useInferenceStore", () => {
     });
   });
 });
+
+describe("useInferenceStore — DFF", () => {
+  const RK = "0:model-a";
+  const makeDff = (k = 3, seeds = 2) => ({
+    k,
+    grid: 2,
+    groups: [
+      {
+        species: "wheat",
+        boxes: Array.from({ length: seeds }, (_, i) => ({
+          boxId: `box-${i}`,
+          heatmaps: Array.from({ length: k }, () =>
+            Array.from({ length: 4 }, () => 0),
+          ),
+        })),
+      },
+    ],
+  });
+
+  beforeEach(() => {
+    useInferenceStore.setState({
+      results: new Map(),
+      camResults: new Map(),
+      camRank: new Map(),
+      dffResults: new Map(),
+      dffK: new Map(),
+      dffActiveConcept: new Map(),
+      explainMode: new Map(),
+      dffPending: new Set(),
+      requestDff: null,
+      activeResultKey: null,
+    });
+  });
+
+  it("stores a DFF result and clears that run's pending flag", () => {
+    useInferenceStore.setState({ dffPending: new Set([RK]) });
+    useInferenceStore.getState().setDffResult(0, "model-a", makeDff());
+    const st = useInferenceStore.getState();
+    expect(st.dffResults.get(RK)?.k).toBe(3);
+    expect(st.dffPending.has(RK)).toBe(false);
+  });
+
+  it("clamps K to [MIN_DFF_K, MAX_DFF_K]", () => {
+    useInferenceStore.getState().setDffK(RK, 99);
+    expect(useInferenceStore.getState().dffK.get(RK)).toBe(6);
+    useInferenceStore.getState().setDffK(RK, 0);
+    expect(useInferenceStore.getState().dffK.get(RK)).toBe(1);
+  });
+
+  it("toggles the active concept and clears on repeat or null", () => {
+    const s = () => useInferenceStore.getState();
+    s().setDffActiveConcept(RK, 2);
+    expect(s().dffActiveConcept.get(RK)).toBe(2);
+    s().setDffActiveConcept(RK, 2); // same concept → back to segmentation
+    expect(s().dffActiveConcept.has(RK)).toBe(false);
+    s().setDffActiveConcept(RK, 1);
+    s().setDffActiveConcept(RK, null); // explicit "all"
+    expect(s().dffActiveConcept.has(RK)).toBe(false);
+  });
+
+  it("switches explain mode per run", () => {
+    useInferenceStore.getState().setExplainMode(RK, "dff");
+    expect(useInferenceStore.getState().explainMode.get(RK)).toBe("dff");
+  });
+
+  it("triggerDff marks pending and calls the trigger with parsed args", () => {
+    const calls: Array<[number, string, number]> = [];
+    useInferenceStore
+      .getState()
+      .setRequestDff((i, m, k) => calls.push([i, m, k]));
+    // modelConfigId itself contains a colon (the run timestamp) — only the
+    // first colon separates the image index.
+    useInferenceStore.getState().triggerDff("2:swin-L 101spp CAM:1700", 4);
+    expect(calls).toEqual([[2, "swin-L 101spp CAM:1700", 4]]);
+    expect(
+      useInferenceStore.getState().dffPending.has("2:swin-L 101spp CAM:1700"),
+    ).toBe(true);
+  });
+
+  it("triggerDff is a no-op when no trigger is registered", () => {
+    useInferenceStore.getState().triggerDff(RK, 3);
+    expect(useInferenceStore.getState().dffPending.has(RK)).toBe(false);
+  });
+
+  it("removeResult drops exactly this run's DFF state, sparing prefix siblings", () => {
+    useInferenceStore.getState().setDffResult(0, "model-a", makeDff());
+    useInferenceStore.getState().setDffK(RK, 5);
+    useInferenceStore.getState().setExplainMode(RK, "dff");
+    // A sibling run whose key has RK as a leading substring must survive.
+    useInferenceStore.getState().setDffResult(0, "model-a:2", makeDff());
+
+    useInferenceStore.getState().removeResult(RK);
+    const st = useInferenceStore.getState();
+    expect(st.dffResults.has(RK)).toBe(false);
+    expect(st.dffK.has(RK)).toBe(false);
+    expect(st.explainMode.has(RK)).toBe(false);
+    expect(st.dffResults.has("0:model-a:2")).toBe(true);
+  });
+
+  it("removeResultsForImage clears DFF for that image only", () => {
+    useInferenceStore.getState().setDffResult(0, "model-a", makeDff());
+    useInferenceStore.getState().setDffResult(1, "model-a", makeDff());
+    useInferenceStore.getState().removeResultsForImage(0);
+    const st = useInferenceStore.getState();
+    expect(st.dffResults.has("0:model-a")).toBe(false);
+    expect(st.dffResults.has("1:model-a")).toBe(true);
+  });
+
+  it("clearResults resets all DFF state", () => {
+    useInferenceStore.getState().setDffResult(0, "model-a", makeDff());
+    useInferenceStore.getState().setExplainMode(RK, "dff");
+    useInferenceStore.setState({ dffPending: new Set([RK]) });
+    useInferenceStore.getState().clearResults();
+    const st = useInferenceStore.getState();
+    expect(st.dffResults.size).toBe(0);
+    expect(st.explainMode.size).toBe(0);
+    expect(st.dffPending.size).toBe(0);
+  });
+});

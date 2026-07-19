@@ -21,6 +21,8 @@ export const useInference = (currentIndex: number) => {
   const setStatus = useInferenceStore((s) => s.setStatus);
   const setResult = useInferenceStore((s) => s.setResult);
   const setCamResult = useInferenceStore((s) => s.setCamResult);
+  const setDffResult = useInferenceStore((s) => s.setDffResult);
+  const setRequestDff = useInferenceStore((s) => s.setRequestDff);
   const setActiveResultKey = useInferenceStore((s) => s.setActiveResultKey);
   const setModelLoaded = useInferenceStore((s) => s.setModelLoaded);
   const setModelLoadProgress = useInferenceStore((s) => s.setModelLoadProgress);
@@ -87,6 +89,13 @@ export const useInference = (currentIndex: number) => {
             classes: msg.classes,
           });
           break;
+        case "dff-result":
+          setDffResult(msg.imageIndex, msg.modelConfigId, {
+            k: msg.k,
+            grid: msg.grid,
+            groups: msg.groups,
+          });
+          break;
         case "error":
           setError(msg.message);
           setStatus("error");
@@ -100,15 +109,29 @@ export const useInference = (currentIndex: number) => {
     };
 
     workerRef.current = worker;
+    // Expose a DFF-compute trigger to the store so the toggle UI can request a
+    // (lazy) factorization for a run without the worker handle being threaded
+    // through the view tree.
+    setRequestDff((imageIndex, modelConfigId, k) => {
+      worker.postMessage({
+        type: "compute-dff",
+        imageIndex,
+        modelConfigId,
+        k,
+      });
+    });
     return () => {
       worker.terminate();
       workerRef.current = null;
       isModelLoadedRef.current = false;
+      setRequestDff(null);
     };
   }, [
     setStatus,
     setResult,
     setCamResult,
+    setDffResult,
+    setRequestDff,
     setActiveResultKey,
     setModelLoaded,
     setModelLoadProgress,

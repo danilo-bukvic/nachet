@@ -27,6 +27,8 @@ export interface ModelConfig {
   detectorThreshold: number;
   /** Number of top classification labels to keep per detected region */
   classifierTopK: number;
+  /** Classifier-head weights filename on HF; enables CAM when set. */
+  classifierHeadFile?: string;
   /** Optional ONNX filename for the detector (without .onnx), defaults to "model" */
   detectorModelFileName?: string;
   /** Minimum bounding-box size (longest dimension, px) for reliable classification */
@@ -82,6 +84,13 @@ export interface ClassifierModelEntry {
   topK: number;
   /** Minimum bounding-box size (longest dimension, px) for reliable classification */
   minBoxSize: number;
+  /**
+   * Filename of the extracted classifier-head weights hosted alongside the
+   * model on Hugging Face (e.g. "classifier_head_101spp.f32.bin"). Set only for
+   * models patched to expose `swin_layernorm`; its presence is what enables the
+   * in-browser Class Activation Maps for that model.
+   */
+  classifierHeadFile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +116,16 @@ export type WorkerInMessage =
       imageIndex: number;
       boxes: import("@common/types").BoxCoordinates[];
       modelConfigId: string;
+    }
+  | {
+      // Deep Feature Factorization request for an already-classified run. The
+      // worker retains that run's `swin_layernorm` features, groups its seeds by
+      // predicted species, and factors each group into `k` shared concepts.
+      // Sent lazily — only when the user opens DFF mode or changes K.
+      type: "compute-dff";
+      imageIndex: number;
+      modelConfigId: string;
+      k: number;
     };
 
 export type WorkerOutMessage =
@@ -141,6 +160,28 @@ export type WorkerOutMessage =
         label: string;
         score: number;
         heatmap: number[];
+      }[];
+    }
+  | {
+      // Deep Feature Factorization result for one run: the seeds grouped by
+      // predicted species, each group factored into K shared concepts. Per box
+      // we send K concept heatmaps; the UI colors each token by its dominant
+      // concept. Sent once per `compute-dff` request (per run, per K).
+      type: "dff-result";
+      imageIndex: number;
+      modelConfigId: string;
+      /** Concept count actually used (may clamp below the request for tiny groups). */
+      k: number;
+      /** spatial grid side (e.g. 12 → 12×12 = 144 tokens). */
+      grid: number;
+      /** One group per predicted species that had at least one seed. */
+      groups: {
+        species: string;
+        boxes: {
+          boxId: string;
+          /** K heatmaps, each `grid*grid` floats in [0, 1] (row-major). */
+          heatmaps: number[][];
+        }[];
       }[];
     }
   | { type: "error"; message: string };
@@ -225,6 +266,8 @@ export const CLASSIFIER_MODELS: ClassifierModelEntry[] = [
     model: "cfia-ai-lab/swin-large-patch4-window12-384-in22k-101spp-ft-dff",
     topK: 5,
     minBoxSize: 384,
+    // Extracted head weights (101 × 1536 float32) hosted alongside the model.
+    classifierHeadFile: "classifier_head_101spp.f32.bin",
   },
   {
     id: "vit-base-224 0spp",
@@ -254,13 +297,6 @@ export const huggingFaceFileUrl = (
   return `https://huggingface.co/${modelId}/resolve/main/${filename}`;
 };
 
-/**
- * Filename of the extracted Swin classifier-head weights (101 × 1536 float32),
- * hosted alongside the patched model on Hugging Face and fetched at CAM time.
- * Model-specific, so it lives in the model repo rather than the app bundle.
- */
-export const CLASSIFIER_HEAD_FILENAME = "classifier_head_101spp.f32.bin";
-
 /** Assemble a ModelConfig from independent detector and classifier selections. */
 export const buildModelConfig = (
   detector: DetectorModelEntry,
@@ -272,6 +308,7 @@ export const buildModelConfig = (
     classifierModel: classifier.model,
     detectorThreshold: detector.threshold,
     classifierTopK: classifier.topK,
+    classifierHeadFile: classifier.classifierHeadFile,
     detectorModelFileName: detector.modelFileName,
     minBoxSize: classifier.minBoxSize,
     // Multi-component / text-promptable detector fields. Undefined for the

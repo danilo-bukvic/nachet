@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Box, Typography } from "@mui/material";
 import type { InferenceResult } from "@common/types";
 import { getUnscaledCoordinates, getScaledBounds } from "@common/imageutils";
@@ -28,6 +28,29 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
   const camRank = useInferenceStore((s) => s.camRank);
   const activeResultKey = useInferenceStore((s) => s.activeResultKey);
   const activeRank = activeResultKey ? camRank.get(activeResultKey) : undefined;
+
+  // DFF overlay state for the shown run: which mode is active, its concept maps,
+  // and the isolated concept (if any). One box → its group's K heatmaps.
+  const dffResults = useInferenceStore((s) => s.dffResults);
+  const explainMode = useInferenceStore((s) => s.explainMode);
+  const dffActiveConcept = useInferenceStore((s) => s.dffActiveConcept);
+  const activeMode = activeResultKey
+    ? (explainMode.get(activeResultKey) ?? "cam")
+    : "cam";
+  const dffRun =
+    activeResultKey && activeMode === "dff"
+      ? dffResults.get(activeResultKey)
+      : undefined;
+  const activeConcept = activeResultKey
+    ? dffActiveConcept.get(activeResultKey)
+    : undefined;
+  const dffBoxMaps = useMemo(() => {
+    const m = new Map<string, number[][]>();
+    if (dffRun)
+      for (const g of dffRun.groups)
+        for (const b of g.boxes) m.set(b.boxId, b.heatmaps);
+    return m;
+  }, [dffRun]);
 
   // Box edit store
   const isEditing = useBoxEditStore((s) => s.isEditing);
@@ -233,15 +256,24 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
           {/* Boxes */}
           {containerSize.width > 0 &&
             displayBoxes.map((box, i) => {
-              // CAM heatmap for this box at the toggled prediction rank (if any).
+              // CAM heatmap for this box at the toggled prediction rank (CAM
+              // mode only — DFF mode paints its own segmentation instead).
               const camKey =
-                !isEditing && activeResultKey && activeRank !== undefined
+                !isEditing &&
+                activeMode === "cam" &&
+                activeResultKey &&
+                activeRank !== undefined
                   ? `${activeResultKey}:${box.boxId}`
                   : null;
               const camRes = camKey ? camResults.get(camKey) : undefined;
               const camEntry =
                 camRes && activeRank !== undefined
                   ? camRes.classes[activeRank]
+                  : undefined;
+              // DFF concept maps for this box (when the run is in DFF mode).
+              const dffMapsForBox =
+                !isEditing && activeMode === "dff"
+                  ? dffBoxMaps.get(box.boxId)
                   : undefined;
               return (
                 <InferenceOverlay
@@ -267,6 +299,9 @@ const ImageViewer = ({ src, imageDims, result }: Props) => {
                   isEditSelected={isEditing && selectedBoxIndex === i}
                   camHeatmap={camEntry?.heatmap}
                   camGrid={camEntry ? camRes?.grid : undefined}
+                  dffMaps={dffMapsForBox}
+                  dffGrid={dffMapsForBox ? dffRun?.grid : undefined}
+                  dffActiveConcept={activeConcept}
                   onBoxUpdate={isEditing ? updateBox : undefined}
                   onBoxDelete={isEditing ? deleteBox : undefined}
                   onBoxSelect={isEditing ? setSelectedBoxIndex : undefined}

@@ -150,6 +150,30 @@ const main = {
     etaTooltip:
       "Estimated time remaining. Accuracy improves as more inferences are completed.",
   },
+  cam: {
+    rank: "Top {{n}}",
+    overlayLabel: "overlay top {{n}}",
+    overlayTooltip: "Overlay this prediction rank on all seeds",
+  },
+  explain: {
+    cam: "CAM",
+    dff: "DFF",
+    modeLabel: "Explainability mode",
+    camTooltip: "Class activation — regions driving each species",
+    dffTooltip: "Feature factorization — parts shared across a species",
+  },
+  dff: {
+    concepts: "Concepts",
+    decrease: "fewer concepts",
+    increase: "more concepts",
+    all: "All parts",
+    allTooltip: "Color each seed by its dominant part",
+    concept: "Concept {{n}}",
+    conceptTooltip: "Show only this part across the seeds",
+    computing: "Finding shared parts…",
+    group: "{{species}} · {{count}} seeds",
+    empty: "No shared parts found",
+  },
 } as const;
 
 export default main;

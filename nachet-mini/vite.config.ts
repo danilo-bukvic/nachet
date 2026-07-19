@@ -1,36 +1,47 @@
 import path from "path";
-import fs from 'fs';
+import fs from "fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_BASE_URL || "/",
-  plugins: [react(),
+  plugins: [
+    react(),
     {
-      name: 'models-404',
+      name: "models-404",
       configureServer(server) {
-        server.middlewares.use('/models', (req, res, next) => {
-          const urlPath = req.url ? decodeURIComponent(req.url.split('?')[0]) : '/';
-          const filePath = path.join(process.cwd(), 'public', 'models', urlPath);
+        server.middlewares.use("/models", (req, res, next) => {
+          const urlPath = req.url
+            ? decodeURIComponent(req.url.split("?")[0])
+            : "/";
+          const filePath = path.join(
+            process.cwd(),
+            "public",
+            "models",
+            urlPath,
+          );
 
           if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
             return next();
           }
 
           res.statusCode = 404;
-          res.setHeader('Content-Type', 'text/plain');
-          res.end('Not found');
+          res.setHeader("Content-Type", "text/plain");
+          res.end("Not found");
         });
       },
-    },],
+    },
+  ],
   optimizeDeps: {
     include: [
       "@mui/icons-material/GitHub",
       "@mui/icons-material/Close",
       "@mui/icons-material/Cancel",
-      "@mui/icons-material/AccessTime", 
+      "@mui/icons-material/AccessTime",
       "@mui/icons-material/List",
+      "@mui/icons-material/Add",
+      "@mui/icons-material/Remove",
       "react-webcam",
       "file-saver",
       "jszip",
