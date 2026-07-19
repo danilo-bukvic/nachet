@@ -157,6 +157,25 @@ const main = {
     overlayLabel: "superposer top {{n}}",
     overlayTooltip: "Superposer ce rang de prédiction sur toutes les graines",
   },
+  explain: {
+    cam: "CAM",
+    dff: "DFF",
+    modeLabel: "Mode d'explicabilité",
+    camTooltip: "Activation de classe — régions déterminant chaque espèce",
+    dffTooltip: "Factorisation — parties communes à une espèce",
+  },
+  dff: {
+    concepts: "Concepts",
+    decrease: "moins de concepts",
+    increase: "plus de concepts",
+    all: "Toutes les parties",
+    allTooltip: "Colorer chaque graine selon sa partie dominante",
+    concept: "Concept {{n}}",
+    conceptTooltip: "Afficher seulement cette partie sur les graines",
+    computing: "Recherche des parties communes…",
+    group: "{{species}} · {{count}} graines",
+    empty: "Aucune partie commune trouvée",
+  },
 } as const;
 
 export default main;

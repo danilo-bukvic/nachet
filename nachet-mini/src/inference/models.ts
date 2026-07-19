@@ -116,6 +116,16 @@ export type WorkerInMessage =
       imageIndex: number;
       boxes: import("@common/types").BoxCoordinates[];
       modelConfigId: string;
+    }
+  | {
+      // Deep Feature Factorization request for an already-classified run. The
+      // worker retains that run's `swin_layernorm` features, groups its seeds by
+      // predicted species, and factors each group into `k` shared concepts.
+      // Sent lazily — only when the user opens DFF mode or changes K.
+      type: "compute-dff";
+      imageIndex: number;
+      modelConfigId: string;
+      k: number;
     };
 
 export type WorkerOutMessage =
@@ -150,6 +160,28 @@ export type WorkerOutMessage =
         label: string;
         score: number;
         heatmap: number[];
+      }[];
+    }
+  | {
+      // Deep Feature Factorization result for one run: the seeds grouped by
+      // predicted species, each group factored into K shared concepts. Per box
+      // we send K concept heatmaps; the UI colors each token by its dominant
+      // concept. Sent once per `compute-dff` request (per run, per K).
+      type: "dff-result";
+      imageIndex: number;
+      modelConfigId: string;
+      /** Concept count actually used (may clamp below the request for tiny groups). */
+      k: number;
+      /** spatial grid side (e.g. 12 → 12×12 = 144 tokens). */
+      grid: number;
+      /** One group per predicted species that had at least one seed. */
+      groups: {
+        species: string;
+        boxes: {
+          boxId: string;
+          /** K heatmaps, each `grid*grid` floats in [0, 1] (row-major). */
+          heatmaps: number[][];
+        }[];
       }[];
     }
   | { type: "error"; message: string };

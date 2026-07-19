@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { InferenceBox } from "@common/types";
 import { jetColor } from "@common/heatmapColors";
+import { conceptColorRgb } from "@common/dffColors";
 import { getScaledBounds, getUnscaledCoordinates } from "@common/imageutils";
 import { useIsPortrait } from "@hooks/useIsPortrait";
 import {
@@ -59,6 +60,12 @@ interface Props {
   camHeatmap?: number[];
   /** spatial grid side for `camHeatmap` (e.g. 12). */
   camGrid?: number;
+  /** DFF concept heatmaps for this box (K arrays of grid*grid floats [0,1]). */
+  dffMaps?: number[][];
+  /** spatial grid side for `dffMaps` (e.g. 12). */
+  dffGrid?: number;
+  /** Isolate this one concept index; undefined = full argmax segmentation. */
+  dffActiveConcept?: number;
   onBoxUpdate?: (index: number, box: InferenceBox) => void;
   onBoxDelete?: (index: number) => void;
   onBoxSelect?: (index: number) => void;
@@ -85,6 +92,9 @@ const InferenceOverlay = ({
   isEditSelected = false,
   camHeatmap,
   camGrid,
+  dffMaps,
+  dffGrid,
+  dffActiveConcept,
   onBoxUpdate,
   onBoxDelete,
   onBoxSelect,
@@ -144,16 +154,12 @@ const InferenceOverlay = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (editMode || !camHeatmap || !camGrid) return;
-    const g = camGrid;
-    if (g * g !== camHeatmap.length) return;
+    if (editMode) return;
 
-    const JET_ALPHA = 140; // ~0.55, lets the seed show through
     const F = 192; // fine grid side for smooth value-space interpolation
-    const span = g - 1;
 
-    // Bilinear sample of the (g x g) heatmap at fractional (fx, fy) in [0, g-1].
-    const sample = (fx: number, fy: number) => {
+    // Bilinear sample of a (g x g) map at fractional (fx, fy) in [0, g-1].
+    const sampleMap = (map: number[], g: number, fx: number, fy: number) => {
       const x0 = Math.floor(fx);
       const y0 = Math.floor(fy);
       const x1 = Math.min(x0 + 1, g - 1);
@@ -161,36 +167,93 @@ const InferenceOverlay = ({
       const dx = fx - x0;
       const dy = fy - y0;
       return (
-        camHeatmap[y0 * g + x0] * (1 - dx) * (1 - dy) +
-        camHeatmap[y0 * g + x1] * dx * (1 - dy) +
-        camHeatmap[y1 * g + x0] * (1 - dx) * dy +
-        camHeatmap[y1 * g + x1] * dx * dy
+        map[y0 * g + x0] * (1 - dx) * (1 - dy) +
+        map[y0 * g + x1] * dx * (1 - dy) +
+        map[y1 * g + x0] * (1 - dx) * dy +
+        map[y1 * g + x1] * dx * dy
       );
     };
 
-    const fine = document.createElement("canvas");
-    fine.width = F;
-    fine.height = F;
-    const fctx = fine.getContext("2d");
-    if (!fctx) return;
-    const img = fctx.createImageData(F, F);
-
-    for (let j = 0; j < F; j++) {
-      const fy = (j / (F - 1)) * span;
-      for (let i = 0; i < F; i++) {
-        const fx = (i / (F - 1)) * span;
-        const [r, gg, b] = jetColor(sample(fx, fy));
-        const o = (j * F + i) * 4;
-        img.data[o] = r;
-        img.data[o + 1] = gg;
-        img.data[o + 2] = b;
-        img.data[o + 3] = JET_ALPHA;
+    // Paint into the overlay by upsampling in value space (interpolate the map
+    // values, then color), so the ramp is smooth instead of blocky. `color`
+    // turns the per-concept sampled values at one pixel into an RGBA tuple.
+    const paint = (
+      maps: number[][],
+      g: number,
+      color: (vals: number[]) => [number, number, number, number],
+    ) => {
+      const span = g - 1;
+      const fine = document.createElement("canvas");
+      fine.width = F;
+      fine.height = F;
+      const fctx = fine.getContext("2d");
+      if (!fctx) return;
+      const img = fctx.createImageData(F, F);
+      const vals = new Array<number>(maps.length);
+      for (let j = 0; j < F; j++) {
+        const fy = (j / (F - 1)) * span;
+        for (let i = 0; i < F; i++) {
+          const fx = (i / (F - 1)) * span;
+          for (let k = 0; k < maps.length; k++)
+            vals[k] = sampleMap(maps[k], g, fx, fy);
+          const [r, gg, b, a] = color(vals);
+          const o = (j * F + i) * 4;
+          img.data[o] = r;
+          img.data[o + 1] = gg;
+          img.data[o + 2] = b;
+          img.data[o + 3] = a;
+        }
       }
+      fctx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(fine, 0, 0, canvas.width, canvas.height);
+    };
+
+    // DFF segmentation takes precedence when present: color each pixel by its
+    // dominant concept (or one isolated concept), with opacity from strength.
+    if (dffMaps && dffGrid && dffMaps.length > 0) {
+      const g = dffGrid;
+      if (dffMaps.some((m) => m.length !== g * g)) return;
+      const SEG_ALPHA = 165;
+      const alpha = (v: number) =>
+        Math.round(Math.max(0, Math.min(1, v)) * SEG_ALPHA);
+      paint(dffMaps, g, (vals) => {
+        if (dffActiveConcept !== undefined) {
+          const [r, gg, b] = conceptColorRgb(dffActiveConcept);
+          return [r, gg, b, alpha(vals[dffActiveConcept] ?? 0)];
+        }
+        let best = 0;
+        let bestV = -Infinity;
+        for (let k = 0; k < vals.length; k++)
+          if (vals[k] > bestV) {
+            bestV = vals[k];
+            best = k;
+          }
+        const [r, gg, b] = conceptColorRgb(best);
+        return [r, gg, b, alpha(bestV)];
+      });
+      return;
     }
-    fctx.putImageData(img, 0, 0);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(fine, 0, 0, canvas.width, canvas.height);
-  }, [camHeatmap, camGrid, editMode, scaledWidth, scaledHeight]);
+
+    if (camHeatmap && camGrid) {
+      const g = camGrid;
+      if (g * g !== camHeatmap.length) return;
+      const JET_ALPHA = 140; // ~0.55, lets the seed show through
+      paint([camHeatmap], g, (vals) => {
+        const [r, gg, b] = jetColor(vals[0]);
+        return [r, gg, b, JET_ALPHA];
+      });
+    }
+  }, [
+    camHeatmap,
+    camGrid,
+    dffMaps,
+    dffGrid,
+    dffActiveConcept,
+    editMode,
+    scaledWidth,
+    scaledHeight,
+  ]);
 
   // Window-level mouse handlers for drag/resize
   useEffect(() => {
@@ -478,8 +541,8 @@ const InferenceOverlay = ({
       sx={sx}
       onMouseDown={editMode ? handleBoxMouseDown : undefined}
     >
-      {/* CAM overlay: the selected class's jet heatmap for this box */}
-      {camHeatmap && camGrid && !editMode && (
+      {/* Explainability overlay: CAM jet heatmap or DFF concept segmentation */}
+      {((camHeatmap && camGrid) || (dffMaps && dffGrid)) && !editMode && (
         <canvas
           ref={camCanvasRef}
           data-testid={`cam-overlay-${index}`}

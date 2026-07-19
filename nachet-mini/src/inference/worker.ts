@@ -20,6 +20,7 @@ import {
 } from "./detector";
 import { createSerialQueue } from "./serialQueue";
 import { computeCam } from "./cam";
+import { computeDffGroup } from "./dff";
 
 // Class Activation Mapping runs only when the loaded classifier exposes the
 // `swin_layernorm` output (the patched 101spp model); otherwise it's skipped.
@@ -105,6 +106,20 @@ let classifierModel: any = null;
 let classifierProcessor: any = null;
 let loadedConfig: ModelConfig | null = null;
 
+// Per-run `swin_layernorm` features, retained so DFF can be factored lazily
+// (only when the user opens DFF mode or changes K) instead of re-running the
+// model. Keyed by "imageIndex:modelConfigId"; capped so a long session can't
+// grow this without bound (each seed is ~0.9 MB of float32 features).
+interface BoxFeature {
+  boxId: string;
+  species: string;
+  data: Float32Array;
+  tokens: number;
+  channels: number;
+}
+const dffFeatureCache = new Map<string, BoxFeature[]>();
+const DFF_CACHE_CAP = 5;
+
 // ---------------------------------------------------------------------------
 // Progress callback factory
 // ---------------------------------------------------------------------------
@@ -147,6 +162,9 @@ const handleMessage = async (data: WorkerInMessage): Promise<void> => {
   // ── Load models ──────────────────────────────────────────────────────────
   if (data.type === "load-models") {
     const config = data.config;
+    // Retained features belong to the previously loaded model — drop them so a
+    // DFF request can never mix features across model switches.
+    dffFeatureCache.clear();
     const device = await getDevice();
     const classifierDevice = device;
     const progressDetector = makeProgressCallback("detector");
@@ -514,6 +532,68 @@ const handleMessage = async (data: WorkerInMessage): Promise<void> => {
       });
     }
   }
+
+  // ── Deep Feature Factorization (lazy) ────────────────────────────────────
+  // Group the run's retained seed features by predicted species and factor each
+  // group into K shared concepts. Runs off the main thread; the empty-result
+  // fallbacks let the UI clear its pending state even when nothing is retained.
+  if (data.type === "compute-dff") {
+    const { imageIndex, modelConfigId, k } = data;
+    const key = `${imageIndex}:${modelConfigId}`;
+    const feats = dffFeatureCache.get(key);
+    if (!feats || feats.length === 0) {
+      send({
+        type: "dff-result",
+        imageIndex,
+        modelConfigId,
+        k,
+        grid: 0,
+        groups: [],
+      });
+      return;
+    }
+    try {
+      const { tokens, channels } = feats[0];
+      const grid = Math.round(Math.sqrt(tokens));
+      const bySpecies = new Map<string, BoxFeature[]>();
+      for (const f of feats) {
+        const arr = bySpecies.get(f.species);
+        if (arr) arr.push(f);
+        else bySpecies.set(f.species, [f]);
+      }
+      const groups: {
+        species: string;
+        boxes: { boxId: string; heatmaps: number[][] }[];
+      }[] = [];
+      for (const [species, members] of bySpecies) {
+        const res = computeDffGroup(
+          members.map((m) => m.data),
+          tokens,
+          channels,
+          { k },
+        );
+        groups.push({
+          species,
+          boxes: members.map((m, i) => ({
+            boxId: m.boxId,
+            heatmaps: res.seeds[i].heatmaps.map((h) => Array.from(h)),
+          })),
+        });
+      }
+      send({ type: "dff-result", imageIndex, modelConfigId, k, grid, groups });
+    } catch (err) {
+      console.warn("[worker] DFF failed:", err);
+      send({
+        type: "dff-result",
+        imageIndex,
+        modelConfigId,
+        k,
+        grid: 0,
+        groups: [],
+      });
+    }
+    return;
+  }
 };
 
 // The only origin we accept messages from is our own. Dedicated-worker
@@ -549,6 +629,10 @@ const classifyBoxes = async (
   imageIndex: number,
   modelConfigId: string,
 ): Promise<void> => {
+  // Collected across boxes for DFF: each seed's `swin_layernorm` features tagged
+  // with its predicted species, retained after the loop for lazy factorization.
+  const collectedFeatures: BoxFeature[] = [];
+
   for (let i = 0; i < boxes.length; i++) {
     const { topX: xmin, topY: ymin, bottomX: xmax, bottomY: ymax } = boxes[i];
 
@@ -630,6 +714,21 @@ const classifyBoxes = async (
       const featTensor = rawOut.swin_layernorm as
         | { data?: Float32Array; dims?: number[] }
         | undefined;
+
+      // Retain this seed's features for DFF. Copy out of the ORT output buffer
+      // (which may be reused by the next box's run) and tag with the top-1
+      // species so the group-by-species factorization can find it later.
+      if (featTensor?.data && featTensor.dims?.length === 3) {
+        const [, tokens, channels] = featTensor.dims;
+        collectedFeatures.push({
+          boxId: boxes[i].boxId,
+          species: topLabel,
+          data: (featTensor.data as Float32Array).slice(),
+          tokens,
+          channels,
+        });
+      }
+
       if (headFile && featTensor?.data && featTensor.dims?.length === 3) {
         try {
           const [, tokens, channels] = featTensor.dims;
@@ -659,6 +758,19 @@ const classifyBoxes = async (
       }
     } finally {
       if (cropUrl) URL.revokeObjectURL(cropUrl);
+    }
+  }
+
+  // Retain this run's features for lazy DFF, refreshing insertion order so the
+  // cap evicts the least-recently-produced run.
+  if (collectedFeatures.length > 0) {
+    const key = `${imageIndex}:${modelConfigId}`;
+    dffFeatureCache.delete(key);
+    dffFeatureCache.set(key, collectedFeatures);
+    while (dffFeatureCache.size > DFF_CACHE_CAP) {
+      const oldest = dffFeatureCache.keys().next().value;
+      if (oldest === undefined) break;
+      dffFeatureCache.delete(oldest);
     }
   }
 };
