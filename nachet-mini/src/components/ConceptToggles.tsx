@@ -67,6 +67,13 @@ const ConceptToggles = ({ resultKey }: Props) => {
 
   const conceptCount = dff?.groups[0]?.boxes[0]?.heatmaps.length ?? 0;
   const activeConcept = dffActiveConcept.get(resultKey);
+  // DFF discovers parts *shared across* a batch. If every species in the run has
+  // a single seed there is no batch to share across, and the concepts describe
+  // that lone seed rather than the species — worth calling out.
+  const allSingletons =
+    !!dff &&
+    dff.groups.length > 0 &&
+    dff.groups.every((g) => g.boxes.length < 2);
 
   const changeK = (delta: number) => {
     const next = currentK + delta;
@@ -147,6 +154,21 @@ const ConceptToggles = ({ resultKey }: Props) => {
           }}
         >
           {t("dff.empty")}
+        </Box>
+      )}
+
+      {!pending && conceptCount > 0 && allSingletons && (
+        <Box
+          data-testid="dff-singleton-hint"
+          sx={{
+            pl: "5.2vh",
+            pr: "0.8vh",
+            py: "0.3vh",
+            fontSize: "1.1vh",
+            color: "warning.dark",
+          }}
+        >
+          {t("dff.singleton")}
         </Box>
       )}
 

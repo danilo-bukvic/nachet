@@ -173,7 +173,10 @@ const main = {
     concept: "Concept {{n}}",
     conceptTooltip: "Afficher seulement cette partie sur les graines",
     computing: "Recherche des parties communes…",
-    group: "{{species}} · {{count}} graines",
+    group_one: "{{species}} · {{count}} graine",
+    group_other: "{{species}} · {{count}} graines",
+    singleton:
+      "Nécessite 2 graines ou plus d'une même espèce pour trouver des parties communes",
     empty: "Aucune partie commune trouvée",
   },
 } as const;

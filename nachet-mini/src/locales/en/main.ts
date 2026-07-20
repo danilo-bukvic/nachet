@@ -171,7 +171,9 @@ const main = {
     concept: "Concept {{n}}",
     conceptTooltip: "Show only this part across the seeds",
     computing: "Finding shared parts…",
-    group: "{{species}} · {{count}} seeds",
+    group_one: "{{species}} · {{count}} seed",
+    group_other: "{{species}} · {{count}} seeds",
+    singleton: "Needs 2+ seeds of one species to find shared parts",
     empty: "No shared parts found",
   },
 } as const;

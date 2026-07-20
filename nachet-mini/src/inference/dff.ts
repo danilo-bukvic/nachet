@@ -78,33 +78,47 @@ export function computeDffGroup(
   // tiny groups (e.g. a single seed with a low token count).
   const K = Math.max(1, Math.min(options.k ?? DEFAULT_K, C, P));
 
-  // --- build X (C × P) with per-channel min-shift to make it non-negative ---
+  // --- build X (C × P), clamping negatives to zero ---
   // Column (s, t) -> s * tokens + t. X[ch, col] = seeds[s][t * C + ch].
+  //
+  // NMF needs a non-negative matrix, and layernorm output is mixed-sign. The
+  // obvious fix — shifting each channel up by its minimum — is a trap: it adds
+  // a large constant to every entry, so the factorization spends its first (and
+  // largest) component modelling that DC offset. That component is strongly
+  // active at *every* location, wins the per-token argmax everywhere, and
+  // leaves the real parts with no territory. Clamping instead keeps X sparse,
+  // which is the regime where NMF actually yields a parts-based decomposition.
   const X = new Float64Array(C * P);
   for (let ch = 0; ch < C; ch++) {
     const xrow = ch * P;
-    let mn = Infinity;
     for (let s = 0; s < N; s++) {
       const seed = seeds[s];
       const base = s * tokens;
       for (let t = 0; t < tokens; t++) {
         const v = seed[t * C + ch];
-        X[xrow + base + t] = v;
-        if (v < mn) mn = v;
+        X[xrow + base + t] = v > 0 ? v : 0;
       }
     }
-    if (mn !== 0) for (let col = 0; col < P; col++) X[xrow + col] -= mn;
   }
 
   const { W, H } = nmf(X, C, P, K, iters);
   void W; // concept directions aren't needed downstream (no concept labeling)
 
-  // --- normalize H on one shared scale, then split per seed ---
-  // A single global max (not per-concept) keeps concept strengths comparable,
-  // so the per-token argmax the UI renders picks the genuinely dominant concept.
-  let gmax = 0;
-  for (let i = 0; i < H.length; i++) if (H[i] > gmax) gmax = H[i];
-  const scale = gmax || 1;
+  // --- normalize each concept by its own peak, then split per seed ---
+  // Per concept rather than one shared maximum: concepts differ in intrinsic
+  // magnitude, and under a single global scale the largest one can sit above
+  // every other concept's ceiling and win the argmax at every location (the
+  // rest then render blank). Scaling each concept to its own peak puts them on
+  // equal footing, so the segmentation shows which part is most characteristic
+  // of a location. The scale is shared across the group within a concept, so a
+  // concept that is weaker on one seed than another still reads that way.
+  const conceptScale = new Float64Array(K);
+  for (let k = 0; k < K; k++) {
+    let mx = 0;
+    const hrow = k * P;
+    for (let c = 0; c < P; c++) if (H[hrow + c] > mx) mx = H[hrow + c];
+    conceptScale[k] = mx || 1;
+  }
 
   const seedResults: DffSeedMaps[] = [];
   for (let s = 0; s < N; s++) {
@@ -113,6 +127,7 @@ export function computeDffGroup(
     for (let k = 0; k < K; k++) {
       const hm = new Float32Array(tokens);
       const hrow = k * P + base;
+      const scale = conceptScale[k];
       for (let t = 0; t < tokens; t++) hm[t] = H[hrow + t] / scale;
       heatmaps.push(hm);
     }

@@ -106,4 +106,75 @@ describe("computeDffGroup", () => {
     const seed = new Float32Array(3 * CHANNELS);
     expect(() => computeDffGroup([seed], 3, CHANNELS, { k: 2 })).toThrow();
   });
+
+  it("recovers planted parts from layernorm-like features without blanketing", () => {
+    // Mixed-sign values with per-channel offsets, like the real swin.layernorm
+    // output. Two spatial parts are planted: the top half of the grid drives
+    // channels 0-9, the bottom half drives channels 10-19.
+    const C = 64;
+    const G = 6;
+    const T = G * G;
+    const SEEDS = 4;
+    let state = 12345;
+    const rnd = () => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+    const gauss = () => {
+      let u = 0;
+      while (u === 0) u = rnd();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd());
+    };
+    const chOffset = Array.from({ length: C }, () => gauss() * 2);
+    const seeds = Array.from({ length: SEEDS }, () => {
+      const f = new Float32Array(T * C);
+      for (let t = 0; t < T; t++) {
+        const isTop = Math.floor(t / G) < G / 2;
+        for (let c = 0; c < C; c++) {
+          let v = gauss() * 0.5 + chOffset[c];
+          if (isTop && c < 10) v += 4;
+          if (!isTop && c >= 10 && c < 20) v += 4;
+          f[t * C + c] = v;
+        }
+      }
+      return f;
+    });
+
+    const res = computeDffGroup(seeds, T, C, { k: 3 });
+
+    const winnerAt = (maps: Float32Array[], t: number) => {
+      let best = 0;
+      let bestV = -Infinity;
+      maps.forEach((m, k) => {
+        if (m[t] > bestV) {
+          bestV = m[t];
+          best = k;
+        }
+      });
+      return best;
+    };
+    const majority = (maps: Float32Array[], from: number, to: number) => {
+      const tally = new Array<number>(res.k).fill(0);
+      for (let t = from; t < to; t++) tally[winnerAt(maps, t)]++;
+      return tally.indexOf(Math.max(...tally));
+    };
+
+    const half = T / 2;
+    const tops = res.seeds.map((sd) => majority(sd.heatmaps, 0, half));
+    const bottoms = res.seeds.map((sd) => majority(sd.heatmaps, half, T));
+
+    // The two planted parts land on two different concepts...
+    expect(tops[0]).not.toBe(bottoms[0]);
+    // ...and a given part keeps the same concept index on every seed.
+    expect(new Set(tops).size).toBe(1);
+    expect(new Set(bottoms).size).toBe(1);
+
+    // Guards the DC-offset degeneracy: shifting each channel by its minimum
+    // made one component active everywhere, so it won every token's argmax and
+    // the other concepts rendered blank.
+    const counts = new Array<number>(res.k).fill(0);
+    for (const sd of res.seeds)
+      for (let t = 0; t < T; t++) counts[winnerAt(sd.heatmaps, t)]++;
+    expect(Math.max(...counts) / (T * SEEDS)).toBeLessThan(0.9);
+  });
 });
