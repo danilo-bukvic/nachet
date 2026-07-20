@@ -178,8 +178,12 @@ const ConceptToggles = ({ resultKey }: Props) => {
                     height: "1.6vh",
                     borderRadius: "0.3vh",
                     flexShrink: 0,
-                    background:
-                      "conic-gradient(#e53935, #1e88e5, #43a047, #fb8c00)",
+                    // Built from the run's actual concept colors, so the "all"
+                    // swatch previews the segmentation it turns on.
+                    background: `conic-gradient(${Array.from(
+                      { length: conceptCount },
+                      (_, i) => conceptColorCss(i, conceptCount),
+                    ).join(", ")})`,
                   }}
                 />
                 <Box sx={{ flex: 1 }}>{t("dff.all")}</Box>
@@ -217,8 +221,8 @@ const ConceptToggles = ({ resultKey }: Props) => {
                         height: "1.6vh",
                         borderRadius: "0.3vh",
                         flexShrink: 0,
-                        backgroundColor: conceptColorCss(k),
-                        border: `1.5px solid ${conceptColorCss(k)}`,
+                        backgroundColor: conceptColorCss(k, conceptCount),
+                        border: `1.5px solid ${conceptColorCss(k, conceptCount)}`,
                       }}
                     />
                     <Box sx={{ flex: 1 }}>{t("dff.concept", { n: k + 1 })}</Box>

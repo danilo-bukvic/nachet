@@ -31,6 +31,13 @@ type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | null;
 const HANDLE_SIZE = 8;
 const MIN_BOX_PX = 20;
 
+/**
+ * How strong a DFF concept must be, relative to the box's strongest concept
+ * response, to count as "present" and get coloured. Below this a location reads
+ * as background and is left clear.
+ */
+const PRESENCE_FRACTION = 0.2;
+
 const handleCursors: Record<string, string> = {
   nw: "nwse-resize",
   n: "ns-resize",
@@ -209,19 +216,25 @@ const InferenceOverlay = ({
       ctx.drawImage(fine, 0, 0, canvas.width, canvas.height);
     };
 
-    // DFF segmentation takes precedence when present: color each pixel by its
-    // dominant concept (or one isolated concept), with opacity from strength.
+    // DFF segmentation takes precedence when present: each location belongs to
+    // whichever concept dominates it, drawn as that concept's flat color.
+    // Opacity is constant — presence is shown as color and absence as nothing,
+    // so no concept can read as "stronger" just because NMF ordered it first.
     if (dffMaps && dffGrid && dffMaps.length > 0) {
       const g = dffGrid;
       if (dffMaps.some((m) => m.length !== g * g)) return;
-      const SEG_ALPHA = 165;
-      const alpha = (v: number) =>
-        Math.round(Math.max(0, Math.min(1, v)) * SEG_ALPHA);
+      const CONCEPT_ALPHA = 160; // constant: identity, never magnitude
+      const CLEAR: [number, number, number, number] = [0, 0, 0, 0];
+
+      // "Absent" = no concept meaningfully fires here. Judge that against this
+      // box's own strongest response, so a dim seed still shows its parts while
+      // genuinely empty background stays uncoloured.
+      let boxMax = 0;
+      for (const m of dffMaps) for (const v of m) if (v > boxMax) boxMax = v;
+      const minPresence = boxMax * PRESENCE_FRACTION;
+      const count = dffMaps.length;
+
       paint(dffMaps, g, (vals) => {
-        if (dffActiveConcept !== undefined) {
-          const [r, gg, b] = conceptColorRgb(dffActiveConcept);
-          return [r, gg, b, alpha(vals[dffActiveConcept] ?? 0)];
-        }
         let best = 0;
         let bestV = -Infinity;
         for (let k = 0; k < vals.length; k++)
@@ -229,8 +242,12 @@ const InferenceOverlay = ({
             bestV = vals[k];
             best = k;
           }
-        const [r, gg, b] = conceptColorRgb(best);
-        return [r, gg, b, alpha(bestV)];
+        if (bestV < minPresence) return CLEAR;
+        // Isolating a concept keeps only that concept's territory.
+        if (dffActiveConcept !== undefined && best !== dffActiveConcept)
+          return CLEAR;
+        const [r, gg, b] = conceptColorRgb(best, count);
+        return [r, gg, b, CONCEPT_ALPHA];
       });
       return;
     }
