@@ -95,6 +95,26 @@ describe("ConceptToggles", () => {
     expect(useInferenceStore.getState().dffK.get(RK)).toBe(4);
   });
 
+  it("pluralizes the batch summary and warns when every group is a singleton", () => {
+    useInferenceStore.setState({
+      dffResults: new Map([[RK, makeDff(3, 1)]]),
+    });
+    const { getByTestId } = render(<ConceptToggles resultKey={RK} />);
+    // One seed → singular, and a hint that there is no batch to share across.
+    expect(getByTestId("dff-group")).toHaveTextContent("1 seed");
+    expect(getByTestId("dff-group")).not.toHaveTextContent("1 seeds");
+    expect(getByTestId("dff-singleton-hint")).toBeInTheDocument();
+  });
+
+  it("hides the singleton hint once a species has a real batch", () => {
+    useInferenceStore.setState({ dffResults: new Map([[RK, makeDff(3, 4)]]) });
+    const { getByTestId, queryByTestId } = render(
+      <ConceptToggles resultKey={RK} />,
+    );
+    expect(getByTestId("dff-group")).toHaveTextContent("4 seeds");
+    expect(queryByTestId("dff-singleton-hint")).toBeNull();
+  });
+
   it("shows an empty note when the factorization returns no groups", () => {
     useInferenceStore.setState({
       dffResults: new Map([[RK, { k: 3, grid: 0, groups: [] }]]),
