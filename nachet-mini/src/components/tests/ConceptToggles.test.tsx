@@ -106,13 +106,26 @@ describe("ConceptToggles", () => {
     expect(getByTestId("dff-singleton-hint")).toBeInTheDocument();
   });
 
-  it("hides the singleton hint once a species has a real batch", () => {
+  it("warns that a batch is too small for the chosen K", () => {
+    // 4 seeds at K=3 leaves barely more seeds than concepts, so NMF can spend a
+    // component per seed rather than finding parts shared across them.
     useInferenceStore.setState({ dffResults: new Map([[RK, makeDff(3, 4)]]) });
     const { getByTestId, queryByTestId } = render(
       <ConceptToggles resultKey={RK} />,
     );
     expect(getByTestId("dff-group")).toHaveTextContent("4 seeds");
     expect(queryByTestId("dff-singleton-hint")).toBeNull();
+    expect(getByTestId("dff-batch-hint")).toBeInTheDocument();
+  });
+
+  it("drops both hints once there are comfortably more seeds than concepts", () => {
+    useInferenceStore.setState({ dffResults: new Map([[RK, makeDff(3, 12)]]) });
+    const { getByTestId, queryByTestId } = render(
+      <ConceptToggles resultKey={RK} />,
+    );
+    expect(getByTestId("dff-group")).toHaveTextContent("12 seeds");
+    expect(queryByTestId("dff-singleton-hint")).toBeNull();
+    expect(queryByTestId("dff-batch-hint")).toBeNull();
   });
 
   it("shows an empty note when the factorization returns no groups", () => {

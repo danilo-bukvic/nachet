@@ -74,6 +74,15 @@ const ConceptToggles = ({ resultKey }: Props) => {
     !!dff &&
     dff.groups.length > 0 &&
     dff.groups.every((g) => g.boxes.length < 2);
+  // Even with a batch, too few seeds per concept lets the factorization spend a
+  // component per seed: with N seeds and K≈N, "which seed is this" is a valid
+  // low-rank explanation, so concepts latch onto seed identity instead of
+  // generalizing into parts. Want comfortably more seeds than concepts.
+  const largestGroup = dff
+    ? Math.max(0, ...dff.groups.map((g) => g.boxes.length))
+    : 0;
+  const smallBatch =
+    !allSingletons && largestGroup > 0 && largestGroup < 2 * currentK;
 
   const changeK = (delta: number) => {
     const next = currentK + delta;
@@ -157,9 +166,9 @@ const ConceptToggles = ({ resultKey }: Props) => {
         </Box>
       )}
 
-      {!pending && conceptCount > 0 && allSingletons && (
+      {!pending && conceptCount > 0 && (allSingletons || smallBatch) && (
         <Box
-          data-testid="dff-singleton-hint"
+          data-testid={allSingletons ? "dff-singleton-hint" : "dff-batch-hint"}
           sx={{
             pl: "5.2vh",
             pr: "0.8vh",
@@ -168,7 +177,7 @@ const ConceptToggles = ({ resultKey }: Props) => {
             color: "warning.dark",
           }}
         >
-          {t("dff.singleton")}
+          {t(allSingletons ? "dff.singleton" : "dff.smallBatch")}
         </Box>
       )}
 
