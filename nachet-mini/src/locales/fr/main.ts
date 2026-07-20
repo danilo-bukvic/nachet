@@ -177,6 +177,8 @@ const main = {
     group_other: "{{species}} · {{count}} graines",
     singleton:
       "Nécessite 2 graines ou plus d'une même espèce pour trouver des parties communes",
+    smallBatch:
+      "Peu de graines par concept — les concepts peuvent suivre des graines individuelles au lieu de parties communes. Ajoutez des graines ou réduisez K.",
     empty: "Aucune partie commune trouvée",
   },
 } as const;

@@ -174,6 +174,8 @@ const main = {
     group_one: "{{species}} · {{count}} seed",
     group_other: "{{species}} · {{count}} seeds",
     singleton: "Needs 2+ seeds of one species to find shared parts",
+    smallBatch:
+      "Few seeds per concept — concepts may track individual seeds instead of shared parts. Add seeds or lower K.",
     empty: "No shared parts found",
   },
 } as const;
